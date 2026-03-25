@@ -1,0 +1,11 @@
+## runtime data
+__pycache__/
+.data/
+
+## venv
+venv/
+
+
+## config & env
+config.json
+*.env
