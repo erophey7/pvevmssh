@@ -3,8 +3,15 @@ from pathlib import Path
 import asyncssh
 
 
+########## Centralized Path Management Class ##########
 class Paths:
-    """Централизованное управление путями к файлам и директориям."""
+    """
+    ########## Path Management System ##########
+    
+    Provides a centralized way to access important directories and files
+    for the SSH server application. All paths are resolved relative to
+    the project root directory.
+    """
 
     BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -18,17 +25,27 @@ class Paths:
 
     @staticmethod
     def init() -> None:
-        """Создаёт все необходимые директории."""
+        """
+        ########## Initialize Required Directories ##########
+        
+        Creates all necessary directories for the application to function properly.
+        This includes data storage, SSH keys, and log directories.
+        """
         Paths.SSH_DIR.mkdir(parents=True, exist_ok=True)
         Paths.DATA_DIR.mkdir(parents=True, exist_ok=True)
         Paths.LOG_DIR.mkdir(parents=True, exist_ok=True)
 
     @staticmethod
     def ensure_ssh_host_key() -> None:
-        """Генерирует host-ключ, если он отсутствует."""
+        """
+        ########## Ensure SSH Host Key Exists ##########
+        
+        Generates an SSH host key file if it doesn't already exist.
+        This is necessary for establishing secure SSH connections.
+        """
         if Paths.SSH_HOST_KEY.exists():
             return
         print(f"[INIT] Generating SSH host key: {Paths.SSH_HOST_KEY}")
         key = asyncssh.generate_private_key("ssh-rsa")
-        key.write_private_key(str(Paths.SSH_HOST_KEY))
+        key.write_private_key(str(Paths.SSH_HOST_MY))
         Paths.SSH_HOST_KEY.chmod(0o600)

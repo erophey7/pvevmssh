@@ -1,7 +1,22 @@
 from helpers.globals import GlobalStore
 from sshserver.sessions import get_current_session, SessionStore
 
+
+########## About Command Implementation ##########
 def about(username: str, *args) -> str:
+    """
+    ########## Display Server Information ##########
+    
+    Generates a formatted string containing information about the PVE SSH server,
+    including configuration details, current session data, and active session count.
+    
+    Parameters:
+        username (str): Username of the connected client
+        *args: Additional arguments (not used in this implementation)
+        
+    Returns:
+        str: Formatted string with server information
+    """
     config = GlobalStore.get().require("config")
     current = get_current_session()
 
@@ -25,6 +40,8 @@ def about(username: str, *args) -> str:
 
     return "\n".join(lines)
 
+
+########## Command Definition ##########
 command = {
     "name": "about",
     "help": "Show server information",

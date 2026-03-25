@@ -1,10 +1,10 @@
 """
-Запуск SSH-сервера: аутентификация и создание сессий.
+########## SSH Server Startup: Authentication and Session Creation ##########
 """
 
 import asyncssh
 import logging
-from typing import Optional
+import typing as t
 
 from helpers.globals import GlobalStore
 from helpers.path import Paths
@@ -13,56 +13,88 @@ from sshserver.handlers import handle_client
 logger = logging.getLogger(__name__)
 
 
+########## PVESSHServer Class for SSH Connection Handling ##########
 class PVESSHServer(asyncssh.SSHServer):
     """
-    Класс-обработчик аутентификации и запросов на создание сессий.
+    ########## SSH Server Handler Class ##########
+    
+    Custom SSH server class that handles authentication and session creation.
+    Extends the asyncssh.SSHServer base class to provide Proxmox-specific functionality.
     """
 
     def __init__(self) -> None:
-        self._conn: Optional[asyncssh.SSHServerConnection] = None
+        self._conn: t.Optional[asyncssh.SSHServerConnection] = None
 
     def connection_made(self, conn: asyncssh.SSHServerConnection) -> None:
-        """Вызывается при установке SSH-соединения."""
+        """########## Connection Established ##########
+        
+        Called when an SSH connection is successfully established.
+        Stores the connection object for later use.
+        """
         self._conn = conn
         logger.debug("Connection made")
 
-    def connection_lost(self, exc: Optional[Exception]) -> None:
-        """Вызывается при разрыве соединения."""
+    def connection_lost(self, exc: t.Optional[Exception]) -> None:
+        """########## Connection Lost ##########
+        
+        Called when the SSH connection is unexpectedly closed.
+        Logs any exceptions that occurred during the connection.
+        """
         logger.debug("Connection lost: %s", exc)
 
     def begin_auth(self, username: str) -> bool:
-        """Начало аутентификации: возвращаем True, чтобы разрешить продолжение."""
+        """########## Authentication Start ##########
+        
+        Called at the beginning of the authentication process.
+        Returns True to allow continuing with authentication steps.
+        """
         logger.debug("begin_auth called for %s", username)
         return True
 
     def password_auth_supported(self) -> bool:
-        """Сообщаем, что поддерживаем аутентификацию по паролю."""
+        """########## Password Authentication Support ##########
+        
+        Indicates that password-based authentication is supported by this server.
+        """
         return True
 
-    def validate_password(self, username: str, password: str) -> bool:
+    def validate_password(self, username: str, password: None) -> bool:
         """
-        Синхронная проверка пароля.
-        Временно разрешаем все пароли.
-        В будущем: проверка через API Proxmox.
+        ########## Password Validation ##########
+        
+        Synchronous method to validate user passwords.
+        Temporarily allows all passwords for testing purposes.
+        In production, this should be replaced with actual authentication logic
+        (e.g., checking against Proxmox API or database).
         """
         logger.debug("validate_password called for %s", username)
-        return True  # TODO: реальная аутентификация
+        return True  # TODO: replace with real authentication
 
 
+########## SSH Server Runner Class ##########
 class SSHServerRunner:
-    """Запускает SSH-сервер и ожидает подключения."""
+    """########## SSH Server Execution Manager ##########
+    
+    Manages the lifecycle of the SSH server, including binding to a network interface,
+    loading host keys, and starting the server listening for incoming connections.
+    """
 
     def __init__(self) -> None:
-        # Получаем конфигурацию из глобального хранилища
+        # ########## Load Configuration ##########
         config = GlobalStore.get().require("config")
         self.bind = config.get("ssh.bind", "0.0.0.0:22222")
         self.host_key = config.get("ssh.host_key", str(Paths.SSH_HOST_KEY))
 
     async def start(self) -> None:
-        """Запускает сервер и ждёт его завершения."""
+        """########## Start SSH Server ##########
+        
+        Initializes and starts the SSH server, binding it to the specified network interface
+        and port. The server listens for incoming connections until explicitly shut down.
+        """
         host, port = self.bind.split(":")
         port = int(port)
 
+        # ########## Create SSH Server Instance ##########
         server = await asyncssh.create_server(
             PVESSHServer,
             host,

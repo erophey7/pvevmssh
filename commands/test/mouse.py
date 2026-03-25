@@ -1,15 +1,21 @@
 """
-Команда mouse: включает/выключает режим мыши в терминале.
-Отправляет escape-последовательности для включения/выключения отслеживания мыши.
+########## Mouse Reporting Command ##########
 """
 
 from sshserver.sessions import get_current_session
 
+
+########## Mouse Reporting Function ##########
 def mouse(username: str, *args) -> str:
     """
-    Использование: mouse [on|off]
-    Включает или выключает режим мыши в терминале.
+    ########## Enable/Disable Mouse Reporting ##########
+    
+    Toggles mouse reporting in the terminal. Sends escape sequences to
+    enable or disable mouse tracking for SSH sessions.
+    
+    Usage: mouse [on|off]
     """
+
     session = get_current_session()
     if not session:
         return "No session found.\n"
@@ -17,29 +23,26 @@ def mouse(username: str, *args) -> str:
     if not process:
         return "No process found in session.\n"
 
-    # Определяем, нужно включить или выключить
+    # ########## Determine Enable/Disable State ##########
     enable = False
     if args and args[0].lower() == 'on':
         enable = True
     elif args and args[0].lower() == 'off':
         enable = False
     else:
-        # Если аргумент не указан, показываем текущее состояние (просто справка)
+        # ########## Default Behavior: Show Help ##########
         return "Usage: mouse on|off\n"
 
-    # Escape-последовательности для мыши
-    # Для включения: CSI ? 1000 h (включить обычный режим мыши)
-    # Для выключения: CSI ? 1000 l
-    # Можно также добавить другие режимы: 1002 (кнопки и движение), 1003 (все движения)
-    # Пока используем базовый режим.
+    # ########## Send Escape Sequences for Mouse Reporting ##########
     if enable:
-        process.stdout.write("\033[?1000h")   # включить мышь
+        process.stdout.write("\033[?1000h")   # Enable mouse reporting
         return "Mouse reporting enabled.\n"
     else:
-        process.stdout.write("\033[?1000l")   # выключить мышь
+        process.stdout.write("\033[?1000l")   # Disable mouse reporting
         return "Mouse reporting disabled.\n"
 
 
+########## Command Definition ##########
 command = {
     "name": "mouse",
     "help": "Enable or disable mouse reporting",

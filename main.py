@@ -1,8 +1,4 @@
 #!/usr/bin/env python3
-"""
-Точка входа в SSH-сервер для управления VM через Proxmox.
-"""
-
 import asyncio
 import sys
 import logging
@@ -13,32 +9,36 @@ from helpers.globals import GlobalStore
 from sshserver.server import SSHServerRunner
 
 
+############ Setup Logging Configuration ############
 def setup_logging(level: str = "DEBUG") -> None:
-    """Настройка корневого логгера."""
+    """Configure root logger with specified log level and format."""
     logging.basicConfig(
         level=getattr(logging, level.upper(), logging.DEBUG),
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
 
 
+############ Main Async Function ############
 async def main() -> int:
     """
-    Основная асинхронная функция.
-    Инициализирует глобальные объекты, загружает конфиг и запускает сервер.
+    ########## Main Asynchronous Entry Point ##########
+    
+    Primary async function that initializes global objects,
+    loads configuration, and starts the SSH server.
     """
-    # Создание необходимых директорий и host-ключа
+    # ########## Initialize Paths and SSH Host Key ##########
     Paths.init()
     Paths.ensure_ssh_host_key()
 
-    # Загрузка конфигурации
+    # ########## Load Configuration ##########
     config = Config()
     setup_logging(config.get("logger.level", "DEBUG"))
 
-    # Инициализация глобального хранилища
+    # ########## Initialize Global Store ##########
     g = GlobalStore()
     g.set("config", config)
 
-    # Запуск сервера
+    # ########## Start SSH Server ##########
     runner = SSHServerRunner()
     try:
         await runner.start()
@@ -50,5 +50,6 @@ async def main() -> int:
     return 0
 
 
+############ Main Execution Block ############
 if __name__ == "__main__":
     sys.exit(asyncio.run(main()))

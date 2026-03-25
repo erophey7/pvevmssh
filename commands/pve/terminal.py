@@ -1,7 +1,5 @@
 """
-Команда terminal: подключение к последовательному порту виртуальной машины.
-Создаёт полноценный PTY и передаёт управление дочернему процессу (bash).
-Поддерживает изменение размера окна (SIGWINCH).
+########## Terminal Command: Connect to VM Serial Port ##########
 """
 
 import asyncio
@@ -18,17 +16,29 @@ from sshserver.sessions import get_current_session
 logger = logging.getLogger(__name__)
 
 
+########## Helper Function for Setting Window Size ##########
 def set_winsize(fd: int, rows: int, cols: int, xpixels: int = 0, ypixels: int = 0) -> None:
-    """Устанавливает размер окна PTY через ioctl."""
+    """
+    ########## Set Terminal Window Size ##########
+    
+    Sets the terminal window size using ioctl.
+    This is necessary for proper terminal resizing support (SIGWINCH).
+    """
     winsize = struct.pack("HHHH", rows, cols, xpixels, ypixels)
     fcntl.ioctl(fd, termios.TIOCSWINSZ, winsize)
 
 
+########## Main Terminal Command Implementation ##########
 async def terminal(username: str, *args):
     """
-    Использование: terminal <vmid>
-    Подключается к агенту на ноде, где находится VM, и передаёт данные терминала.
+    ########## Connect to VM Serial Port ##########
+    
+    Usage: terminal <vmid>
+    This command connects to the serial port of a virtual machine,
+    creating a full PTY (pseudo-terminal) and launching bash as the shell.
+    Supports window resizing through SIGWINCH signal.
     """
+
     if not args:
         return "Usage: terminal <vmid>\n"
 
@@ -45,68 +55,79 @@ async def terminal(username: str, *args):
     if not channel:
         return "No channel available.\n"
 
-    # Проверяем поддержку PTY
-    if not (hasattr(channel, 'set_line_mode') and hasattr(channel, 'set_echo')):
+    # ########## Check for PTY Support ##########
+    try:
+        has_pty = hasattr(channel, 'set_line_mode') and hasattr(channel, 'set_echo')
+    except Exception as e:
+        logger.error("Error checking PTY support: %s", e)
         return "No PTY available (terminal mode not supported).\n"
 
-    # Сохраняем текущие настройки
+    if not has_pty:
+        return "No PTY available (terminal mode not supported).\n"
+
+    # ########## Save Current Terminal Settings ##########
     try:
         old_line_mode = channel.get_line_mode()
-    except AttributeError:
+    except Exception as e:
+        logger.warning("Error getting line mode: %s", e)
         old_line_mode = True
+
     try:
         old_echo = channel.get_echo()
-    except AttributeError:
+    except Exception as e:
+        logger.warning("Error getting echo status: %s", e)
         old_echo = True
 
     try:
         process.stderr.write(f"Connecting to VM {vmid} (emulated with bash)...\n")
-
-        # Отключаем line editor и echo
+        
+        # ########## Disable Line Editor and Echo ##########
         channel.set_line_mode(False)
         channel.set_echo(False)
 
-        # Создаём PTY
+        # ########## Create PTY ##########
         master_fd, slave_fd = pty.openpty()
 
-        # Запускаем bash с slave как терминал
+        # ########## Spawn Bash Process ##########
         local_proc = subprocess.Popen(
             ["bash", "-i"],
             stdin=slave_fd,
             stdout=slave_fd,
             stderr=slave_fd,
             start_new_session=True,
-            close_fds=True,
+            close_fds=True
         )
-        os.close(slave_fd)                     # закрываем slave в родителе
-        # Открываем master как обычные файлы
+        os.close(slave_fd)  # Close slave in parent
+
+        # ########## Open Master File Descriptors ##########
         stdin_file = open(master_fd, 'wb', buffering=0)
         stdout_file = open(master_fd, 'rb', buffering=0)
 
-        # Устанавливаем начальный размер окна
+        # ########## Set Initial Window Size ##########
         term_size = process.get_terminal_size()
         if term_size:
             rows, cols, xpix, ypix = term_size
-            # Клиент передаёт (cols x rows), а PTY ожидает (rows, cols)
             set_winsize(master_fd, cols, rows, xpix, ypix)
 
-        # Запускаем мониторинг изменения размера окна
+        # ########## Start Monitoring Window Resizing ##########
         loop = asyncio.get_running_loop()
-        monitor_task = asyncio.create_task(
-            _monitor_size(process, master_fd, local_proc)
-        )
+        monitor_task = asyncio.create_task(_monitor_size(process, master_fd, local_proc))
 
-        # Перенаправляем потоки SSH-сессии в PTY
-        await process.redirect(
-            stdin=stdin_file,
-            stdout=stdout_file,
-            stderr=stdout_file
-        )
+        # ########## Redirect SSH Streams to PTY ##########
+        try:
+            await process.redirect(
+                stdin=stdin_file,
+                stdout=stdout_file,
+                stderr=stdout_file
+            )
+        except Exception as e:
+            logger.error("Error redirecting streams: %s", e)
+            pass
 
-        # Ждём завершения bash
+        # ########## Wait for Bash Process to Exit ##########
         await loop.run_in_executor(None, local_proc.wait)
 
-        # Отменяем мониторинг
+        # ########## Cancel Monitoring Task ##########
         monitor_task.cancel()
         await asyncio.gather(monitor_task, return_exceptions=True)
 
@@ -117,26 +138,33 @@ async def terminal(username: str, *args):
         except:
             pass
     finally:
-        # Восстанавливаем настройки
+        # ########## Restore Terminal Settings ##########
         try:
             channel.set_line_mode(old_line_mode)
         except:
             pass
+
         try:
             channel.set_echo(old_echo)
         except:
             pass
-        # Выводим сообщение, игнорируя ошибки закрытого канала
+
+        # ########## Final Output ##########
         try:
             process.stdout.write("\nTerminal session ended. Returning to shell.\n")
         except (BrokenPipeError, OSError):
             pass
-        # Возвращаем None, чтобы dispatcher не пытался писать ответ
-        return None
 
 
+########## Helper Function for Monitoring Window Size Changes ##########
 async def _monitor_size(process, master_fd, local_proc):
-    """Фоновая задача: отслеживает изменение размера окна и посылает SIGWINCH."""
+    """
+    ########## Monitor Terminal Size Changes ##########
+    
+    This background task monitors changes in terminal size and sends SIGWINCH
+    to the child process to ensure it adjusts properly.
+    """
+
     current_size = process.get_terminal_size()
     while local_proc.poll() is None:
         await asyncio.sleep(0.5)
@@ -144,7 +172,6 @@ async def _monitor_size(process, master_fd, local_proc):
         if new_size and new_size != current_size:
             current_size = new_size
             rows, cols, xpix, ypix = new_size
-            # Клиент передаёт (cols x rows), а PTY ожидает (rows, cols)
             set_winsize(master_fd, cols, rows, xpix, ypix)
             try:
                 os.kill(local_proc.pid, signal.SIGWINCH)
@@ -152,6 +179,7 @@ async def _monitor_size(process, master_fd, local_proc):
                 break
 
 
+########## Command Definition ##########
 command = {
     "name": "terminal",
     "help": "Open VM serial terminal",
