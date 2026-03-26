@@ -1,3 +1,7 @@
+"""
+########## Terminal Command: Connect to VM Serial Port ##########
+"""
+
 import os
 import pty
 import fcntl
@@ -5,8 +9,6 @@ import termios
 import struct
 import subprocess
 import logging
-import signal
-import asyncio
 from contextlib import suppress
 from sshserver.sessions import get_current_session
 
@@ -22,6 +24,8 @@ def get_normalized_terminal_size(process):
     term_size = process.get_terminal_size()
     if not term_size:
         return None
+
+    # asyncssh обычно даёт: cols, rows, xpix, ypix
     cols, rows, xpix, ypix = term_size
     return rows, cols, xpix, ypix
 
@@ -31,55 +35,6 @@ def _pty_preexec(slave_fd: int):
         os.setsid()
         fcntl.ioctl(slave_fd, termios.TIOCSCTTY, 0)
     return inner
-
-
-async def _relay_ssh_to_pty(session, process):
-    master_fd = session.extra["terminal_master_fd"]
-    try:
-        while session.extra.get("terminal_mode") and not session.extra["terminal_proc"].poll():
-            try:
-                data = await process.stdin.read(1024)
-            except (asyncio.CancelledError, BrokenPipeError, OSError):
-                break
-            if not data:
-                break
-            os.write(master_fd, data.encode() if isinstance(data, str) else data)
-    except Exception:
-        pass
-
-
-async def _relay_pty_to_ssh(session, process):
-    master_fd = session.extra["terminal_master_fd"]
-    loop = asyncio.get_running_loop()
-    try:
-        while session.extra.get("terminal_mode") and not session.extra["terminal_proc"].poll():
-            try:
-                data = await loop.run_in_executor(None, os.read, master_fd, 1024)
-            except (asyncio.CancelledError, OSError):
-                break
-            if not data:
-                break
-            if isinstance(data, bytes):
-                data = data.decode(errors="replace")
-            process.stdout.write(data)
-    except Exception:
-        pass
-
-
-async def _monitor_terminal_resize(session, process):
-    master_fd = session.extra["terminal_master_fd"]
-    local_proc = session.extra["terminal_proc"]
-    current_size = get_normalized_terminal_size(process)
-    while session.extra.get("terminal_mode") and not local_proc.poll():
-        await asyncio.sleep(0.3)
-        new_size = get_normalized_terminal_size(process)
-        if new_size and new_size != current_size:
-            current_size = new_size
-            rows, cols, xpix, ypix = new_size
-            with suppress(Exception):
-                set_winsize(master_fd, rows, cols, xpix, ypix)
-            with suppress(ProcessLookupError):
-                os.kill(local_proc.pid, signal.SIGWINCH)
 
 
 async def terminal(username: str, *args):
@@ -92,40 +47,33 @@ async def terminal(username: str, *args):
         return "No session found.\r\n"
 
     process = session.extra.get("process")
-    if not process or not process.channel:
-        return "No valid SSH channel found.\r\n"
+    if not process:
+        return "No process found in session.\r\n"
 
     channel = process.channel
+    if not channel:
+        return "No channel available.\r\n"
+
     if session.extra.get("terminal_mode"):
         return "Terminal session already active.\r\n"
 
-    # Сохраняем старый режим
-    old_line_mode, old_echo = True, True
-    with suppress(Exception):
-        old_line_mode = channel.get_line_mode()
-    with suppress(Exception):
-        old_echo = channel.get_echo()
+    has_pty = hasattr(channel, "set_line_mode") and hasattr(channel, "set_echo")
+    if not has_pty:
+        return "No PTY available (terminal mode not supported).\r\n"
+
+    old_line_mode = True
+    old_echo = True
+
+    if hasattr(channel, "get_line_mode"):
+        with suppress(Exception):
+            old_line_mode = channel.get_line_mode()
+
+    if hasattr(channel, "get_echo"):
+        with suppress(Exception):
+            old_echo = channel.get_echo()
 
     try:
-        # открываем PTY
         master_fd, slave_fd = pty.openpty()
-        env = os.environ.copy()
-        env.update({
-            "TERM": process.term_type or "xterm-256color",
-            "COLORTERM": "truecolor",
-            "TERM_PROGRAM": "kitty" if "kitty" in (process.term_type or "").lower() else "",
-            "KITTY_WINDOW_ID": os.environ.get("KITTY_WINDOW_ID", ""),
-            "KITTY_LISTEN_ON": os.environ.get("KITTY_LISTEN_ON", ""),
-            "USER": session.username,
-            "HOME": os.path.expanduser("~"),
-            "SHELL": "/bin/bash",
-        })
-
-        # отключаем line mode и echo перед запуском
-        with suppress(Exception):
-            channel.set_line_mode(False)
-        with suppress(Exception):
-            channel.set_echo(False)
 
         local_proc = subprocess.Popen(
             ["bash", "-i"],
@@ -134,8 +82,8 @@ async def terminal(username: str, *args):
             stderr=slave_fd,
             preexec_fn=_pty_preexec(slave_fd),
             close_fds=True,
-            env=env,
         )
+
         os.close(slave_fd)
 
         term_size = get_normalized_terminal_size(process)
@@ -143,19 +91,18 @@ async def terminal(username: str, *args):
             rows, cols, xpix, ypix = term_size
             set_winsize(master_fd, rows, cols, xpix, ypix)
 
-        session.extra.update({
-            "terminal_mode": True,
-            "terminal_master_fd": master_fd,
-            "terminal_proc": local_proc,
-            "terminal_old_line_mode": old_line_mode,
-            "terminal_old_echo": old_echo,
-            "terminal_vmid": vmid,
-        })
+        with suppress(Exception):
+            channel.set_line_mode(False)
 
-        # запускаем relay задачи
-        asyncio.create_task(_relay_ssh_to_pty(session, process))
-        asyncio.create_task(_relay_pty_to_ssh(session, process))
-        asyncio.create_task(_monitor_terminal_resize(session, process))
+        with suppress(Exception):
+            channel.set_echo(False)
+
+        session.extra["terminal_mode"] = True
+        session.extra["terminal_master_fd"] = master_fd
+        session.extra["terminal_proc"] = local_proc
+        session.extra["terminal_old_line_mode"] = old_line_mode
+        session.extra["terminal_old_echo"] = old_echo
+        session.extra["terminal_vmid"] = vmid
 
         return f"Connecting to VM {vmid} (emulated with bash)...\r\n"
 

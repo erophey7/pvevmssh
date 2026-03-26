@@ -31,20 +31,44 @@ def get_normalized_terminal_size(process):
 ########## Read One Command Line in Shell Mode ##########
 async def read_command_line(process) -> str | None:
     """
-    Чтение одной команды в shell-режиме.
-    Не эхоим символы вручную — это делает SSH line editor / клиент.
+    Shell-mode input reader.
     """
-    try:
-        line = await process.stdin.readline()
-    except asyncssh.TerminalSizeChanged:
-        return "__RESIZE__"
-    except (BrokenPipeError, OSError):
-        return None
+    buffer = ""
 
-    if line == "":
-        return None
+    while True:
+        try:
+            chunk = await process.stdin.read(1)
+        except asyncssh.TerminalSizeChanged:
+            continue
+        except (BrokenPipeError, OSError):
+            return None
 
-    return line.rstrip("\r\n")
+        if chunk == "":
+            return None
+
+        # Backspace / DEL
+        if chunk in ("\x08", "\x7f"):
+            if buffer:
+                buffer = buffer[:-1]
+            continue
+
+        # Enter
+        if chunk in ("\r", "\n"):
+            return buffer
+
+        # Ctrl+C
+        if chunk == "\x03":
+            process.stdout.write("^C\r\n")
+            return ""
+
+        # Ctrl+D at empty prompt = exit shell
+        if chunk == "\x04":
+            if not buffer:
+                return None
+            continue
+
+        # Printable char
+        buffer += chunk
 
 
 ########## PTY Relay: SSH -> PTY ##########
@@ -55,7 +79,7 @@ async def _relay_ssh_to_pty(process, session):
     try:
         while local_proc.poll() is None:
             try:
-                data = await process.stdin.read(1024)
+                data = await process.stdin.read(4096)
             except asyncssh.TerminalSizeChanged:
                 continue
             except asyncio.CancelledError:
@@ -88,7 +112,7 @@ async def _relay_pty_to_ssh(process, session):
     try:
         while local_proc.poll() is None:
             try:
-                data = await loop.run_in_executor(None, os.read, master_fd, 1024)
+                data = await loop.run_in_executor(None, os.read, master_fd, 4096)
             except asyncio.CancelledError:
                 break
             except OSError:
@@ -99,7 +123,7 @@ async def _relay_pty_to_ssh(process, session):
 
             try:
                 if isinstance(data, bytes):
-                    data = data.decode("utf-8", errors="ignore")
+                    data = data.decode(errors="replace")
                 process.stdout.write(data)
             except (BrokenPipeError, OSError):
                 break
@@ -260,7 +284,7 @@ async def handle_client(process: asyncssh.SSHServerProcess) -> None:
         process.stdout.write("Type 'help' for available commands.\r\n")
 
         while True:
-            # ########## TERMINAL MODE ##########
+            # Terminal mode
             if session.extra.get("terminal_mode"):
                 try:
                     await start_terminal_mode(process, session)
@@ -270,30 +294,23 @@ async def handle_client(process: asyncssh.SSHServerProcess) -> None:
                         await cleanup_terminal(process, session)
                 continue
 
-            # ########## SHELL MODE ##########
+            # Shell mode
             prompt = session.extra["env"].get("PS1", ">>> ")
             process.stdout.write(prompt)
 
             line = await read_command_line(process)
-
             if line is None:
-                logger.debug("Client disconnected or sent EOF")
                 break
-
-            if not line.strip():
-                continue
-
             line = line.strip()
+            if not line:
+                continue
 
             try:
                 response = await dispatcher.handle(line)
-
                 if isinstance(response, str) and response:
                     process.stdout.write(response)
-
                     if not response.endswith(("\n", "\r\n")):
                         process.stdout.write("\r\n")
-
             except (BrokenPipeError, OSError):
                 break
             except Exception as e:
