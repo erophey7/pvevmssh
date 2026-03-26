@@ -9,6 +9,8 @@ import typing as t
 from helpers.globals import GlobalStore
 from helpers.path import Paths
 from sshserver.handlers import handle_client
+from sshserver.auth import authenticate
+
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +28,8 @@ class PVESSHServer(asyncssh.SSHServer):
         self._conn: t.Optional[asyncssh.SSHServerConnection] = None
 
     def connection_made(self, conn: asyncssh.SSHServerConnection) -> None:
-        """########## Connection Established ##########
+        """
+        ########## Connection Established ##########
         
         Called when an SSH connection is successfully established.
         Stores the connection object for later use.
@@ -35,7 +38,8 @@ class PVESSHServer(asyncssh.SSHServer):
         logger.debug("Connection made")
 
     def connection_lost(self, exc: t.Optional[Exception]) -> None:
-        """########## Connection Lost ##########
+        """
+        ########## Connection Lost ##########
         
         Called when the SSH connection is unexpectedly closed.
         Logs any exceptions that occurred during the connection.
@@ -43,7 +47,8 @@ class PVESSHServer(asyncssh.SSHServer):
         logger.debug("Connection lost: %s", exc)
 
     def begin_auth(self, username: str) -> bool:
-        """########## Authentication Start ##########
+        """
+        ########## Authentication Start ##########
         
         Called at the beginning of the authentication process.
         Returns True to allow continuing with authentication steps.
@@ -52,28 +57,44 @@ class PVESSHServer(asyncssh.SSHServer):
         return True
 
     def password_auth_supported(self) -> bool:
-        """########## Password Authentication Support ##########
+        """
+        ########## Password Authentication Support ##########
         
         Indicates that password-based authentication is supported by this server.
         """
         return True
+    
+    def public_key_auth_supported(self) -> bool:
+        """
+        ########## Password Authentication Support ##########
+        
+        Indicates that pulic-key-based authentication is supported by this server.
+        """
+        return True
 
-    def validate_password(self, username: str, password: None) -> bool:
+    async def validate_password(self, username: str, password: None) -> bool:
         """
         ########## Password Validation ##########
-        
-        Synchronous method to validate user passwords.
-        Temporarily allows all passwords for testing purposes.
-        In production, this should be replaced with actual authentication logic
-        (e.g., checking against Proxmox API or database).
         """
         logger.debug("validate_password called for %s", username)
-        return True  # TODO: replace with real authentication
+        try_authenticate = await authenticate(username=username, password=password)
+
+        return try_authenticate['status']
+    
+    async def validate_public_key(self, username: str, pkey: None) -> bool:
+        """
+        ########## Public Key Validation ##########
+        """
+        logger.debug("validate_public_key called for %s", username)
+        try_authenticate = await authenticate(username=username, pkey=pkey)
+
+        return try_authenticate['status']
 
 
 ########## SSH Server Runner Class ##########
 class SSHServerRunner:
-    """########## SSH Server Execution Manager ##########
+    """
+    ########## SSH Server Execution Manager ##########
     
     Manages the lifecycle of the SSH server, including binding to a network interface,
     loading host keys, and starting the server listening for incoming connections.
@@ -86,7 +107,8 @@ class SSHServerRunner:
         self.host_key = config.get("ssh.host_key", str(Paths.SSH_HOST_KEY))
 
     async def start(self) -> None:
-        """########## Start SSH Server ##########
+        """
+        ########## Start SSH Server ##########
         
         Initializes and starts the SSH server, binding it to the specified network interface
         and port. The server listens for incoming connections until explicitly shut down.
