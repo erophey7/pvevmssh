@@ -81,7 +81,7 @@ class CommandDispatcher:
         if not parts:
             return ""
 
-        cmd_name = parts[0].lower()
+        cmd_name = parts[0]
         args = parts[1:]
 
         if cmd_name == "help":
