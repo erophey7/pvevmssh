@@ -23,18 +23,13 @@ def get_normalized_terminal_size(process):
     term_size = process.get_terminal_size()
     if not term_size:
         return None
-
     cols, rows, xpix, ypix = term_size
     return rows, cols, xpix, ypix
 
 
 ########## Read One Command Line in Shell Mode ##########
 async def read_command_line(process) -> str | None:
-    """
-    Shell-mode input reader.
-    """
     buffer = ""
-
     while True:
         try:
             chunk = await process.stdin.read(1)
@@ -67,7 +62,6 @@ async def read_command_line(process) -> str | None:
                 return None
             continue
 
-        # Printable char
         buffer += chunk
 
 
@@ -79,7 +73,7 @@ async def _relay_ssh_to_pty(process, session):
     try:
         while local_proc.poll() is None:
             try:
-                data = await process.stdin.read(4096)
+                data = await process.stdin.read(1024)
             except asyncssh.TerminalSizeChanged:
                 continue
             except asyncio.CancelledError:
@@ -87,16 +81,11 @@ async def _relay_ssh_to_pty(process, session):
             except (BrokenPipeError, OSError):
                 break
 
-            if data == "":
-                break
-
             if not data:
                 continue
 
             try:
-                if isinstance(data, str):
-                    data = data.encode()
-                os.write(master_fd, data)
+                os.write(master_fd, data.encode() if isinstance(data, str) else data)
             except OSError:
                 break
     except asyncio.CancelledError:
@@ -112,7 +101,7 @@ async def _relay_pty_to_ssh(process, session):
     try:
         while local_proc.poll() is None:
             try:
-                data = await loop.run_in_executor(None, os.read, master_fd, 4096)
+                data = await loop.run_in_executor(None, os.read, master_fd, 1024)
             except asyncio.CancelledError:
                 break
             except OSError:
@@ -122,9 +111,7 @@ async def _relay_pty_to_ssh(process, session):
                 break
 
             try:
-                if isinstance(data, bytes):
-                    data = data.decode(errors="replace")
-                process.stdout.write(data)
+                process.stdout.write(data.decode(errors="replace"))
             except (BrokenPipeError, OSError):
                 break
     except asyncio.CancelledError:
@@ -145,10 +132,8 @@ async def _monitor_terminal_size(process, session):
         if new_size and new_size != current_size:
             current_size = new_size
             rows, cols, xpix, ypix = new_size
-
             with suppress(Exception):
                 set_winsize(master_fd, rows, cols, xpix, ypix)
-
             with suppress(ProcessLookupError):
                 os.kill(local_proc.pid, signal.SIGWINCH)
 
@@ -173,12 +158,11 @@ async def wait_terminal_mode(process, session):
     local_proc = session.extra.get("terminal_proc")
     if not local_proc:
         return
-
     loop = asyncio.get_running_loop()
     await loop.run_in_executor(None, local_proc.wait)
 
 
-########## Cleanup PTY and Return to Shell ##########
+########## Cleanup PTY ##########
 async def cleanup_terminal(process, session):
     master_fd = session.extra.get("terminal_master_fd")
     local_proc = session.extra.get("terminal_proc")
@@ -198,24 +182,26 @@ async def cleanup_terminal(process, session):
                 with suppress(ProcessLookupError):
                     os.killpg(local_proc.pid, signal.SIGKILL)
 
-    # 2. Закрыть master_fd (разбудит os.read)
+    # 2. Закрыть master_fd
     if master_fd is not None:
         with suppress(OSError):
             os.close(master_fd)
 
     # 3. Отменить фоновые задачи
-    tasks = []
-    for key in ("terminal_relay_in_task", "terminal_relay_out_task", "terminal_resize_task"):
-        task = session.extra.get(key)
+    tasks = [
+        session.extra.get("terminal_relay_in_task"),
+        session.extra.get("terminal_relay_out_task"),
+        session.extra.get("terminal_resize_task"),
+    ]
+    for task in tasks:
         if task:
             task.cancel()
-            tasks.append(task)
 
-    if tasks:
+    if any(tasks):
         with suppress(Exception):
-            await asyncio.gather(*tasks, return_exceptions=True)
+            await asyncio.gather(*[t for t in tasks if t], return_exceptions=True)
 
-    # 4. ВАЖНО: terminal_mode выключаем ДО возврата в shell
+    # 4. Важное: выключаем terminal_mode
     session.extra["terminal_mode"] = False
 
     # 5. Восстановить line mode / echo
@@ -224,7 +210,6 @@ async def cleanup_terminal(process, session):
 
     with suppress(Exception):
         channel.set_line_mode(old_line_mode)
-
     with suppress(Exception):
         channel.set_echo(old_echo)
 
@@ -255,19 +240,10 @@ async def handle_client(process: asyncssh.SSHServerProcess) -> None:
     term_size = process.term_size or (0, 0, 0, 0)
     width, height, pixwidth, pixheight = term_size
 
-    env = {
-        "USER": username,
-        "TERM": term_type,
-        "PS1": ">>> "
-    }
+    env = {"USER": username, "TERM": term_type, "PS1": ">>> "}
 
-    session = SessionInfo(
-        username=username,
-        client_addr=client_addr,
-        term_type=term_type,
-        term_width=width,
-        term_height=height,
-    )
+    session = SessionInfo(username=username, client_addr=client_addr,
+                          term_type=term_type, term_width=width, term_height=height)
     session.extra["process"] = process
     session.extra["env"] = env
     session.extra["terminal_mode"] = False
@@ -280,11 +256,11 @@ async def handle_client(process: asyncssh.SSHServerProcess) -> None:
     try:
         dispatcher = CommandDispatcher(username)
 
+        # Shell-mode приветствие
         process.stdout.write(f"Welcome to PVE SSH Server, {username}!\r\n")
         process.stdout.write("Type 'help' for available commands.\r\n")
 
         while True:
-            # Terminal mode
             if session.extra.get("terminal_mode"):
                 try:
                     await start_terminal_mode(process, session)
@@ -294,9 +270,8 @@ async def handle_client(process: asyncssh.SSHServerProcess) -> None:
                         await cleanup_terminal(process, session)
                 continue
 
-            # Shell mode
             prompt = session.extra["env"].get("PS1", ">>> ")
-            process.stdout.write(prompt)
+            process.stdout.write(prompt)  # строка, не байты
 
             line = await read_command_line(process)
             if line is None:
@@ -307,7 +282,10 @@ async def handle_client(process: asyncssh.SSHServerProcess) -> None:
 
             try:
                 response = await dispatcher.handle(line)
-                if isinstance(response, str) and response:
+                if response:
+                    # commands могут вернуть bytes → декодируем
+                    if isinstance(response, bytes):
+                        response = response.decode(errors="replace")
                     process.stdout.write(response)
                     if not response.endswith(("\n", "\r\n")):
                         process.stdout.write("\r\n")
@@ -332,12 +310,14 @@ async def handle_client(process: asyncssh.SSHServerProcess) -> None:
         with suppress(Exception):
             if session.extra.get("terminal_mode"):
                 await cleanup_terminal(process, session)
-
+    
         current_session.reset(token)
         SessionStore().remove(session.uuid)
         logger.info("Session ended: %s (%s)", session.uuid, username)
-
+    
         try:
-            process.exit(0)
+            # Выход только если shell завершился
+            if not session.extra.get("terminal_mode"):
+                process.exit(0)
         except Exception:
             pass
