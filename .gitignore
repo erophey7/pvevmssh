@@ -9,3 +9,8 @@ venv/
 ## config & env
 config.json
 *.env
+
+
+## other
+* copy.py
+testimage.png
