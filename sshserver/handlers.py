@@ -9,9 +9,6 @@ logger = logging.getLogger(__name__)
 
 
 async def handle_client(process):
-    """
-    Инициализация SSH-сессии, привязка IO и запуск session runtime.
-    """
     username = process.get_extra_info("username")
     client_addr = process.get_extra_info("peername")[0] if process.get_extra_info("peername") else "unknown"
 
@@ -39,6 +36,7 @@ async def handle_client(process):
     logger.info("Session started: %s (%s)", session.uuid, username)
 
     session_io = SessionIOHandler(process)
+    session_io.session = session
     session.extra["io"] = session_io
 
     channel = process.channel
@@ -49,10 +47,11 @@ async def handle_client(process):
         if hasattr(channel, "set_echo"):
             channel.set_echo(False)
     except Exception:
-        logger.debug("Failed to disable channel line mode / echo", exc_info=True)
+        pass
+
+    await session_io.start()
 
     try:
-        await session_io.start()
         await run_session(session, session_io)
 
     except asyncio.CancelledError:
@@ -73,7 +72,7 @@ async def handle_client(process):
         try:
             await session_io.stop()
         except Exception:
-            logger.exception("Failed to stop session IO")
+            pass
 
         try:
             process.exit(0)

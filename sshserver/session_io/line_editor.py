@@ -1,156 +1,209 @@
-import asyncio
+import typing as t
+import logging
+
+from wcwidth import wcswidth
 from sshserver.session_env.history import CommandHistory
-import wcwidth
+
+logger = logging.getLogger(__name__)
+
 
 class LineEditor:
     """
-    Полноценный line editor:
-    - стрелки, ctrl+стрелки
-    - backspace / ctrl+backspace
-    - delete / ctrl+delete
-    - история
-    - UTF-8 корректно
+    Полноценный line editor поверх raw SSH input.
+
+    Поддержка:
+    - UTF-8 / Unicode ввод
+    - Enter
+    - Backspace
+    - Ctrl+Backspace
+    - Delete
+    - Ctrl+Delete
+    - Ctrl+C / Ctrl+D
+    - Стрелки ← ↑ → ↓
+    - Ctrl+← / Ctrl+→ / Ctrl+↑ / Ctrl+↓
+    - История команд
     """
 
     def __init__(self, session_io):
         self.session_io = session_io
-        self.chars = []  # список символов
-        self.cursor = 0
-        self.history = CommandHistory()
-        self._encoding = 'utf-8'
 
-    async def read_line(self) -> str | None:
-        """
-        Чтение строки с поддержкой истории и стрелок.
-        Возвращает None при EOF / Ctrl+D на пустой строке.
-        """
-        self.chars.clear()
-        self.cursor = 0
+        self._chars: list[str] = []
+        self._cursor: int = 0
+        self.history = CommandHistory()
+
+    # ============================================================
+    # Public
+    # ============================================================
+
+    def reset(self) -> None:
+        self._chars.clear()
+        self._cursor = 0
         self.history.reset_index()
 
-        while True:
-            chunk = await self.session_io.input_queue.get()
-            if chunk is None:
-                return None
+    async def feed_char(self, char: str) -> None:
+        self._chars.insert(self._cursor, char)
+        self._cursor += 1
+        await self._redraw_line()
 
-            # декодируем байты безопасно
-            try:
-                text = chunk.decode(self._encoding)
-            except UnicodeDecodeError:
-                text = chunk.decode(self._encoding, errors='replace')
+    async def enter(self) -> str:
+        await self.session_io.output.output_bytes(b"\r\n")
+        line = "".join(self._chars)
 
-            i = 0
-            while i < len(text):
-                c = text[i]
+        if line.strip():
+            self.history.add(line)
 
-                # Ctrl+C
-                if c == '\x03':
-                    await self.session_io.output.output_str('^C\r\n')
-                    return ''
+        return line
 
-                # Ctrl+D
-                if c == '\x04':
-                    if not self.chars:
-                        return None
-                    i += 1
-                    continue
+    async def ctrl_c(self) -> str:
+        self._chars.clear()
+        self._cursor = 0
+        await self.session_io.output.output_bytes(b"^C\r\n")
+        return ""
 
-                # Enter
-                if c in ('\r', '\n'):
-                    await self.session_io.output.output_str('\r\n')
-                    line = ''.join(self.chars)
-                    self.history.push(line)
-                    return line
+    async def ctrl_d(self) -> t.Optional[str]:
+        if not self._chars:
+            return None
+        return "__IGNORE__"
 
-                # Backspace / DEL
-                if c in ('\x08', '\x7f'):
-                    await self._handle_backspace()
-                    i += 1
-                    continue
-
-                # Ctrl+W / Ctrl+Backspace
-                if c == '\x17':
-                    await self._handle_ctrl_backspace()
-                    i += 1
-                    continue
-
-                # Escape sequences (стрелки, ctrl+стрелки, del)
-                if c == '\x1b':
-                    seq = c
-                    i += 1
-                    while i < len(text) and len(seq) < 10:
-                        seq += text[i]
-                        i += 1
-                        if seq.endswith('~') or seq.endswith(('A','B','C','D')):
-                            break
-                    await self._handle_escape(seq)
-                    continue
-
-                # обычные символы
-                self.chars.insert(self.cursor, c)
-                await self.session_io.output.output_str(c)
-                self.cursor += 1
-                i += 1
-
-    async def _handle_backspace(self):
-        if self.cursor == 0:
+    async def backspace(self) -> None:
+        if self._cursor <= 0:
             return
-        self.cursor -= 1
-        ch = self.chars.pop(self.cursor)
-        width = max(wcwidth.wcwidth(ch), 1)
-        await self.session_io.output.output_str('\b' * width + ' ' * width + '\b' * width)
 
-    async def _handle_ctrl_backspace(self):
-        # удаляем до начала слова
-        if self.cursor == 0:
+        self._cursor -= 1
+        self._chars.pop(self._cursor)
+        await self._redraw_line()
+
+    async def ctrl_backspace(self) -> None:
+        if self._cursor <= 0:
             return
-        while self.cursor > 0 and self.chars[self.cursor-1].isspace():
-            self.cursor -= 1
-            self.chars.pop(self.cursor)
-            await self.session_io.output.output_str('\b \b')
-        while self.cursor > 0 and not self.chars[self.cursor-1].isspace():
-            self.cursor -= 1
-            self.chars.pop(self.cursor)
-            await self.session_io.output.output_str('\b \b')
 
-    async def _handle_escape(self, seq: str):
-        # стрелки
-        if seq.endswith('D'):  # ←
-            if self.cursor > 0:
-                self.cursor -= 1
-                await self.session_io.output.output_str('\x1b[D')
-        elif seq.endswith('C'):  # →
-            if self.cursor < len(self.chars):
-                await self.session_io.output.output_str('\x1b[C')
-                self.cursor += 1
-        elif seq.endswith('A'):  # ↑
-            prev = self.history.prev()
-            if prev is not None:
-                await self._replace_line(prev)
-        elif seq.endswith('B'):  # ↓
-            nxt = self.history.next()
-            if nxt is not None:
-                await self._replace_line(nxt)
-            else:
-                await self._replace_line('')
-        elif seq.endswith('~'):
-            # DEL или ctrl+DEL
-            if seq.startswith('\x1b[3'):  # DEL
-                if self.cursor < len(self.chars):
-                    self.chars.pop(self.cursor)
-                    await self.session_io.output.output_str(' ')
-                    await self.session_io.output.output_str('\b')
-            # ctrl+DEL может быть 3;5~
-            # игнорируем пока, можно расширить по желанию
+        # сначала пробелы слева
+        while self._cursor > 0 and self._chars[self._cursor - 1].isspace():
+            self._cursor -= 1
+            self._chars.pop(self._cursor)
 
-    async def _replace_line(self, new: str):
-        # стираем текущую строку
-        while self.cursor > 0:
-            ch = self.chars.pop(0)
-            width = max(wcwidth.wcwidth(ch), 1)
-            await self.session_io.output.output_str('\b' * width + ' ' * width + '\b' * width)
-            self.cursor -= 1
-        # вставляем новую
-        self.chars = list(new)
-        self.cursor = len(self.chars)
-        await self.session_io.output.output_str(new)
+        # потом слово слева
+        while self._cursor > 0 and not self._chars[self._cursor - 1].isspace():
+            self._cursor -= 1
+            self._chars.pop(self._cursor)
+
+        await self._redraw_line()
+
+    async def delete(self) -> None:
+        if self._cursor >= len(self._chars):
+            return
+
+        self._chars.pop(self._cursor)
+        await self._redraw_line()
+
+    async def ctrl_delete(self) -> None:
+        if self._cursor >= len(self._chars):
+            return
+
+        # сначала пробелы справа
+        while self._cursor < len(self._chars) and self._chars[self._cursor].isspace():
+            self._chars.pop(self._cursor)
+
+        # потом слово справа
+        while self._cursor < len(self._chars) and not self._chars[self._cursor].isspace():
+            self._chars.pop(self._cursor)
+
+        await self._redraw_line()
+
+    async def cursor_left(self) -> None:
+        if self._cursor <= 0:
+            return
+
+        self._cursor -= 1
+        width = self._char_width(self._chars[self._cursor])
+        await self.session_io.output.output_bytes(b"\b" * width)
+
+    async def cursor_right(self) -> None:
+        if self._cursor >= len(self._chars):
+            return
+
+        ch = self._chars[self._cursor]
+        await self.session_io.output.output_str(ch)
+        self._cursor += 1
+
+    async def cursor_word_left(self) -> None:
+        if self._cursor <= 0:
+            return
+
+        while self._cursor > 0 and self._chars[self._cursor - 1].isspace():
+            self._cursor -= 1
+
+        while self._cursor > 0 and not self._chars[self._cursor - 1].isspace():
+            self._cursor -= 1
+
+        await self._redraw_line()
+
+    async def cursor_word_right(self) -> None:
+        if self._cursor >= len(self._chars):
+            return
+
+        while self._cursor < len(self._chars) and not self._chars[self._cursor].isspace():
+            self._cursor += 1
+
+        while self._cursor < len(self._chars) and self._chars[self._cursor].isspace():
+            self._cursor += 1
+
+        await self._redraw_line()
+
+    async def history_up(self) -> None:
+        prev = self.history.previous()
+        if prev is None:
+            return
+
+        self._chars = list(prev)
+        self._cursor = len(self._chars)
+        await self._redraw_line()
+
+    async def history_down(self) -> None:
+        nxt = self.history.next()
+        if nxt is None:
+            return
+
+        self._chars = list(nxt)
+        self._cursor = len(self._chars)
+        await self._redraw_line()
+
+    def current_line(self) -> str:
+        return "".join(self._chars)
+
+    # ============================================================
+    # Rendering
+    # ============================================================
+
+    async def _redraw_line(self) -> None:
+        prompt = self._get_prompt()
+        line = "".join(self._chars)
+        left = "".join(self._chars[:self._cursor])
+
+        out = b"\r"
+        out += (prompt + line).encode("utf-8", errors="replace")
+        out += b"\x1b[K"
+
+        total_width = self._text_width(line)
+        left_width = self._text_width(left)
+        move_left = total_width - left_width
+
+        if move_left > 0:
+            out += b"\b" * move_left
+
+        await self.session_io.output.output_bytes(out)
+
+    def _get_prompt(self) -> str:
+        session = getattr(self.session_io, "session", None)
+        if session:
+            env = session.extra.get("env", {})
+            return env.get("PS1", ">>> ")
+        return ">>> "
+
+    def _char_width(self, ch: str) -> int:
+        width = wcswidth(ch)
+        return width if width > 0 else 1
+
+    def _text_width(self, text: str) -> int:
+        width = wcswidth(text)
+        return width if width > 0 else len(text)

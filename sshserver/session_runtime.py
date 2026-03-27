@@ -1,6 +1,4 @@
-import asyncio
 import logging
-import typing as t
 
 from sshserver.dispatcher import CommandDispatcher
 
@@ -9,20 +7,9 @@ logger = logging.getLogger(__name__)
 
 async def run_session(session, session_io) -> None:
     """
-    Основной runtime SSH-сессии.
-
-    Отвечает за:
-    - welcome output
-    - prompt loop
-    - чтение строкового ввода
-    - dispatch команд
-    - вывод результатов
-
-    Не отвечает за:
-    - создание/удаление session object
-    - SSH lifecycle
-    - cleanup соединения
+    Основной цикл пользовательской SSH-сессии.
     """
+
     username = session.username
     dispatcher = CommandDispatcher(username)
 
@@ -44,28 +31,18 @@ async def run_session(session, session_io) -> None:
         try:
             response = await dispatcher.handle(line)
 
-            if response is None:
-                continue
-
-            if isinstance(response, bytes):
-                await session_io.output.output_bytes(response)
-                if not response.endswith((b"\n", b"\r\n")):
-                    await session_io.output.output_str("\r\n")
-
-            elif isinstance(response, str):
-                await session_io.output.output_str(response)
-                if not response.endswith(("\n", "\r\n")):
-                    await session_io.output.output_str("\r\n")
-
-            else:
-                await session_io.output.output_str(str(response))
-                await session_io.output.output_str("\r\n")
+            if response:
+                if isinstance(response, bytes):
+                    await session_io.output.output_bytes(response)
+                    if not response.endswith((b"\n", b"\r\n")):
+                        await session_io.output.output_str("\r\n")
+                else:
+                    await session_io.output.output_str(response)
+                    if not response.endswith(("\n", "\r\n")):
+                        await session_io.output.output_str("\r\n")
 
         except (BrokenPipeError, OSError):
             break
-
-        except asyncio.CancelledError:
-            raise
 
         except Exception as e:
             logger.exception("Command execution error")
