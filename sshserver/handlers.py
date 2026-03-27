@@ -1,27 +1,23 @@
-import asyncssh
 import logging
-from contextlib import suppress
+import asyncio
 
-from sshserver.dispatcher import CommandDispatcher
 from sshserver.sessions import SessionInfo, SessionStore, current_session
-from sshserver.shell_input import read_command_line
-from sshserver.terminal_runtime import run_terminal_session
+from sshserver.session_io.base import SessionIOHandler
+from sshserver.session_runtime import run_session
 
 logger = logging.getLogger(__name__)
 
 
-async def handle_client(process: asyncssh.SSHServerProcess) -> None:
+async def handle_client(process):
+    """
+    Инициализация SSH-сессии, привязка IO и запуск session runtime.
+    """
     username = process.get_extra_info("username")
     client_addr = process.get_extra_info("peername")[0] if process.get_extra_info("peername") else "unknown"
+
     term_type = process.term_type or "unknown"
     term_size = process.term_size or (0, 0, 0, 0)
-    width, height, pixwidth, pixheight = term_size
-
-    env = {
-        "USER": username,
-        "TERM": term_type,
-        "PS1": ">>> ",
-    }
+    width, height, _, _ = term_size
 
     session = SessionInfo(
         username=username,
@@ -30,83 +26,54 @@ async def handle_client(process: asyncssh.SSHServerProcess) -> None:
         term_width=width,
         term_height=height,
     )
+
     session.extra["process"] = process
-    session.extra["env"] = env
-    session.extra["terminal_mode"] = False
+    session.extra["env"] = {
+        "USER": username,
+        "TERM": term_type,
+        "PS1": ">>> ",
+    }
 
     SessionStore().add(session)
+    token = current_session.set(session)
     logger.info("Session started: %s (%s)", session.uuid, username)
 
-    token = current_session.set(session)
+    session_io = SessionIOHandler(process)
+    session.extra["io"] = session_io
+
+    channel = process.channel
 
     try:
-        dispatcher = CommandDispatcher(username)
+        if hasattr(channel, "set_line_mode"):
+            channel.set_line_mode(False)
+        if hasattr(channel, "set_echo"):
+            channel.set_echo(False)
+    except Exception:
+        logger.debug("Failed to disable channel line mode / echo", exc_info=True)
 
-        process.stdout.write(f"Welcome to PVE SSH Server, {username}!\r\n")
-        process.stdout.write("Type 'help' for available commands.\r\n")
+    try:
+        await session_io.start()
+        await run_session(session, session_io)
 
-        while True:
-            # ============================================================
-            # Terminal mode
-            # ============================================================
-            if session.extra.get("terminal_mode"):
-                await run_terminal_session(process, session)
-                continue
-
-            # ============================================================
-            # Shell mode
-            # ============================================================
-            prompt = session.extra["env"].get("PS1", ">>> ")
-            process.stdout.write(prompt)
-
-            line = await read_command_line(process)
-            if line is None:
-                break
-
-            line = line.strip()
-            if not line:
-                continue
-
-            try:
-                response = await dispatcher.handle(line)
-
-                # If command switched us into terminal mode, don't print anything
-                if session.extra.get("terminal_mode"):
-                    continue
-
-                if response:
-                    if isinstance(response, bytes):
-                        response = response.decode(errors="replace")
-
-                    process.stdout.write(response)
-
-                    if not response.endswith(("\n", "\r\n")):
-                        process.stdout.write("\r\n")
-
-            except (BrokenPipeError, OSError):
-                break
-
-            except Exception as e:
-                logger.exception("Command execution error")
-                try:
-                    process.stderr.write(f"\r\nCommand error: {e}\r\n")
-                except (BrokenPipeError, OSError):
-                    break
-
-    except asyncssh.BreakReceived:
+    except asyncio.CancelledError:
         pass
 
     except Exception as e:
-        logger.exception("Error in handle_client")
+        logger.exception("Unexpected session error")
         try:
-            process.stderr.write(f"\r\nError: {e}\r\n")
-        except (BrokenPipeError, OSError):
+            await session_io.output.error_str(f"\r\nError: {e}\r\n")
+        except Exception:
             pass
 
     finally:
         current_session.reset(token)
         SessionStore().remove(session.uuid)
         logger.info("Session ended: %s (%s)", session.uuid, username)
+
+        try:
+            await session_io.stop()
+        except Exception:
+            logger.exception("Failed to stop session IO")
 
         try:
             process.exit(0)

@@ -123,6 +123,7 @@ class SSHServerRunner:
             port,
             server_host_keys=[self.host_key],
             process_factory=handle_client,
+            encoding=None
         )
 
         logger.info("SSH server listening on %s", self.bind)

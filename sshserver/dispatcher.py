@@ -2,37 +2,30 @@ import asyncio
 import importlib
 import pkgutil
 import logging
+import shlex
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-############ Command Dispatcher Core Module ############
+
 class CommandDispatcher:
     def __init__(self, username: str) -> None:
         """
-        ########## Command Dispatcher Initialization ##########
-        
-        Initializes the command dispatcher with a username.
-        Loads all available commands from the commands package.
-        
-        Parameters:
-            username (str): Username of the connected client
+        Инициализация диспетчера команд.
+        Загружает все команды из пакета commands.
         """
         self.username = username
         self.commands = {}
         self._load_commands()
 
     def _load_commands(self) -> None:
-        """########## Command Package Loader ##########
-        
-        Loads all command modules from the 'commands' package.
-        Iterates through subpackages and loads their commands.
+        """
+        Загрузка всех подпакетов команд.
         """
         commands_package = "commands"
         base_path = Path(__file__).parent.parent / commands_package
 
-        # ########## Iterate Through Subpackages ##########
-        for finder, module_name, ispkg in pkgutil.iter_modules([str(base_path)]):
+        for _, module_name, ispkg in pkgutil.iter_modules([str(base_path)]):
             if ispkg:
                 subpackage = f"{commands_package}.{module_name}"
                 self._load_commands_from_package(subpackage)
@@ -40,10 +33,8 @@ class CommandDispatcher:
         logger.debug("Loaded commands: %s", list(self.commands.keys()))
 
     def _load_commands_from_package(self, package_name: str) -> None:
-        """########## Command Module Loader ##########
-        
-        Loads command modules from a specific package.
-        Handles module imports and command registration.
+        """
+        Загрузка модулей команд из конкретного подпакета.
         """
         try:
             package = importlib.import_module(package_name)
@@ -51,7 +42,6 @@ class CommandDispatcher:
             logger.error("Failed to import package %s: %s", package_name, e)
             return
 
-        # ########## Iterate Through Module Files ##########
         for _, module_name, _ in pkgutil.iter_modules(package.__path__):
             full_name = f"{package_name}.{module_name}"
             try:
@@ -65,19 +55,15 @@ class CommandDispatcher:
                 self.commands[cmd_name] = module.command
                 logger.debug("Loaded command: %s from %s", cmd_name, full_name)
 
-    async def handle(self, input_line: str) -> str:
-        """########## Command Line Handler ##########
-        
-        Processes an input line and executes the corresponding command.
-        Supports help commands and handles unknown commands gracefully.
-        
-        Parameters:
-            input_line (str): The input string from the user
-            
-        Returns:
-            str: The result of the executed command or error message
+    async def handle(self, input_line: str):
         """
-        parts = input_line.split()
+        Обработка одной строки команды.
+        """
+        try:
+            parts = shlex.split(input_line)
+        except ValueError as e:
+            return f"Parse error: {e}"
+
         if not parts:
             return ""
 
@@ -91,12 +77,15 @@ class CommandDispatcher:
             return f"Unknown command: {cmd_name}. Type 'help' for available commands."
 
         cmd = self.commands[cmd_name]
+
         try:
             if asyncio.iscoroutinefunction(cmd["func"]):
                 result = await cmd["func"](self.username, *args)
             else:
                 result = cmd["func"](self.username, *args)
+
             return result
+
         except Exception as e:
             logger.exception("Error executing command %s", cmd_name)
             return f"Error executing command: {e}"
