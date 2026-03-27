@@ -102,7 +102,7 @@ class InputHandler:
         # ------------------------------------------------------------
         # Ctrl+W (часто приходит как Ctrl+Backspace)
         # ------------------------------------------------------------
-        if b0 in (0x08, 0x17):
+        if b0 == 0x17:   # можно заменить на b0 in (0x17, 0x08): но это уже не shell like
             await self.editor.ctrl_backspace()
             return None, 1
 
@@ -211,7 +211,7 @@ class InputHandler:
 
     async def _handle_escape(self, seq: bytes):
         text = seq.decode("ascii", errors="ignore")
-        logger.debug("ESC SEQ: %r", text)
+
 
         # ------------------------------------------------------------
         # Стрелки
@@ -264,12 +264,14 @@ class InputHandler:
         if text in ("\x1b[3;5~", "\x1b[;5~"):
             await self.editor.ctrl_delete()
             return
-
+        
         # ------------------------------------------------------------
-        # Ctrl + Backspace
+        # Home / End
         # ------------------------------------------------------------
-        if text in ("\x1b\x7f", "\x1b\x08", "\x1b[127;5u", "\x1b[8;5u"):
-            await self.editor.ctrl_backspace()
+        if text in ("\x1b[H", "\x1bOH", "\x1b[1~", "\x1b[7~"):
+            await self.editor.cursor_home()
             return
 
-        logger.debug("Unhandled escape sequence: %r", text)
+        if text in ("\x1b[F", "\x1bOF", "\x1b[4~", "\x1b[8~"):
+            await self.editor.cursor_end()
+            return
