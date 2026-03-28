@@ -1,50 +1,68 @@
 """
-########## Mouse Reporting Command ##########
+Mouse tracking control and event display.
 """
 
-from sshserver.sessions import get_current_session
+from sshserver.session.manager import get_current_session
+from sshserver.terminal.mouse_handler import MouseEvent
+import asyncio
 
 
-########## Mouse Reporting Function ##########
-def mouse(username: str, *args) -> str:
-    """
-    ########## Enable/Disable Mouse Reporting ##########
-    
-    Toggles mouse reporting in the terminal. Sends escape sequences to
-    enable or disable mouse tracking for SSH sessions.
-    
-    Usage: mouse [on|off]
-    """
-
+async def on_mouse_event(event: MouseEvent):
+    msg = f"\r\n[Mouse] {event.state} btn={event.button} at ({event.x},{event.y})"
+    if event.wheel:
+        msg += f" wheel={event.wheel}"
     session = get_current_session()
-    if not session:
-        return "No session found.\n"
-    process = session.extra.get('process')
-    if not process:
-        return "No process found in session.\n"
+    if session and "terminal" in session.extra:
+        terminal = session.extra["terminal"]
+        await terminal.output.output_str(msg)
 
-    # ########## Determine Enable/Disable State ##########
-    enable = False
-    if args and args[0].lower() == 'on':
-        enable = True
-    elif args and args[0].lower() == 'off':
-        enable = False
+
+async def execute(username: str, *args) -> str:
+    session = get_current_session()
+    if not session or "terminal" not in session.extra:
+        return "Error: Cannot access terminal"
+
+    terminal = session.extra["terminal"]
+    mouse = terminal.input.mouse
+
+    if not args:
+        return "Usage: mouse on [mode] | mouse off | mouse status"
+
+    cmd = args[0].lower()
+
+    if cmd == "on":
+        mode = 0
+        if len(args) > 1:
+            try:
+                mode = int(args[1])
+                if mode not in (0, 2, 3):
+                    return "Invalid mode. Use 0, 2, or 3."
+            except ValueError:
+                return "Mode must be a number (0, 2, 3)."
+
+        base_mode = 1000 if mode == 0 else (1002 if mode == 2 else 1003)
+        await mouse.enable([base_mode, 1006])
+        mouse.add_listener(on_mouse_event)
+        return f"Mouse tracking ENABLED (mode {mode}, base {base_mode})"
+
+    elif cmd == "off":
+        await mouse.disable()
+        mouse.remove_listener(on_mouse_event)
+        return "Mouse tracking DISABLED"
+
+    elif cmd == "status":
+        if mouse.active_modes:
+            return f"Active mouse modes: {sorted(mouse.active_modes)}"
+        else:
+            return "Mouse tracking is OFF"
+
     else:
-        # ########## Default Behavior: Show Help ##########
-        return "Usage: mouse on|off\n"
-
-    # ########## Send Escape Sequences for Mouse Reporting ##########
-    if enable:
-        process.stdout.write("\033[?1000h")   # Enable mouse reporting
-        return "Mouse reporting enabled.\n"
-    else:
-        process.stdout.write("\033[?1000l")   # Disable mouse reporting
-        return "Mouse reporting disabled.\n"
+        return "Unknown command. Use on, off, or status."
 
 
-########## Command Definition ##########
 command = {
     "name": "mouse",
-    "help": "Enable or disable mouse reporting",
-    "func": mouse
+    "help": "Enable or disable mouse tracking",
+    "func": execute,
+    "permissions": ["tester_permission"]
 }
