@@ -153,3 +153,61 @@ class PTYHandler:
                 setattr(self, fd_name, None)
 
         self.owner_pid = None
+
+        
+
+    async def spawn(self, program: str, *args, env=None, cwd=None, attach_streams=True, **kwargs):
+        """
+        Запускает процесс с использованием PTY как управляющего терминала.
+
+        Параметры:
+            program (str): путь к исполняемому файлу
+            *args: аргументы командной строки
+            env (dict, optional): окружение для процесса (по умолчанию копия os.environ)
+            cwd (str, optional): рабочая директория
+            attach_streams (bool): если True, автоматически связывает SSH-потоки с PTY
+            **kwargs: дополнительные параметры для asyncio.create_subprocess_exec
+                        (например, limit, start_new_session и т.д.)
+
+        Возвращает:
+            asyncio.subprocess.Process: запущенный процесс
+        """
+        await self.ensure()
+        slave_fd = self.slave_fd
+
+        # Определяем функцию настройки терминала в дочернем процессе
+        def _child_setup():
+            os.setsid()
+            fcntl.ioctl(slave_fd, termios.TIOCSCTTY, 0)
+            # Если передан пользовательский preexec_fn, вызываем его
+            user_preexec = kwargs.pop('preexec_fn', None)
+            if user_preexec:
+                user_preexec()
+
+        # Подготавливаем окружение
+        if env is None:
+            process_env = os.environ.copy()
+        else:
+            process_env = env.copy()
+
+        # Запускаем процесс
+        proc = await asyncio.create_subprocess_exec(
+            program, *args,
+            stdin=slave_fd,
+            stdout=slave_fd,
+            stderr=slave_fd,
+            env=process_env,
+            cwd=cwd,
+            pass_fds=(slave_fd,),
+            preexec_fn=_child_setup,
+            **kwargs
+        )
+
+        # Устанавливаем owner PID для SIGWINCH
+        self.set_owner_pid(proc.pid)
+
+        # При необходимости прикрепляем потоки SSH <-> PTY
+        if attach_streams:
+            await self.attach_streams()
+
+        return proc

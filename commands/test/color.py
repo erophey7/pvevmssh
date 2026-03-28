@@ -1,3 +1,4 @@
+# commands/test/color.py
 """
 ########## ANSI Color Test ##########
 """
@@ -41,10 +42,9 @@ def color(username: str, *args) -> str:
 
 
 ########## Command Definition ##########
-
-
 command = {
     "name": "color",
     "help": "Display ANSI color test",
-    "func": color
+    "func": color,
+    "permissions": ["tester_permission"]
 }

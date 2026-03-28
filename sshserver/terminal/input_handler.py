@@ -160,7 +160,7 @@ class InputHandler:
 
     def _try_parse_escape(self, pending: bytearray) -> t.Optional[int]:
         """
-        Улучшенный парсер, специально поддерживающий mouse SGR sequences.
+        escape парсер.
         """
         if len(pending) < 2:
             return None
@@ -173,7 +173,6 @@ class InputHandler:
         if pending[1] != ord("["):
             return 2 if len(pending) >= 2 else None
 
-        # === СПЕЦИАЛЬНАЯ ОБРАБОТКА MOUSE SGR ===
         if len(pending) > 3 and pending[2] == ord("<"):
             # Ищем завершающий 'M' или 'm'
             for i in range(3, len(pending)):
@@ -190,10 +189,10 @@ class InputHandler:
         return None
 
     async def _handle_escape(self, seq: bytes):
-        """Обработка escape-последовательностей. Mouse events уже обработаны раньше."""
+        """Обработка escape-последовательностей. """
         text = seq.decode("ascii", errors="ignore")
 
-        # Mouse events уже обработаны в _consume_pending, поэтому здесь их пропускаем
+        # Mouse events уже обработаны в _consume_pending.
         if text.startswith("\x1b[<"):
             return
 

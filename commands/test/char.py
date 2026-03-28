@@ -1,3 +1,4 @@
+# commands/test/char.py
 """
 ########## Special Characters Test ##########
 """
@@ -32,5 +33,6 @@ def chars_test(username: str, *args) -> str:
 command = {
     "name": "chars",
     "help": "Test special characters",
-    "func": chars_test
+    "func": chars_test,
+    "permissions": ["tester_permission"]
 }

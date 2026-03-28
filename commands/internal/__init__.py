@@ -1,11 +1,7 @@
-"""
-Internal commands category.
-Contains core server management and information commands.
-"""
-
-# Можно оставить пустым, либо добавить метаданные категории (опционально)
-category = {
+# commands/internal/__init__.py
+command = {
+    "type": "category",
     "name": "internal",
-    "help": "Internal server commands",
-    "permissions": []          # если пусто — команды внутри доступны всем по умолчанию
+    "help": "Internal server management commands",
+    # права не заданы – все команды наследуют пустой список
 }

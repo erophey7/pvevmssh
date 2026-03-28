@@ -22,7 +22,13 @@ def export(username: str, *args) -> str:
 
     if not args:
         # показать все переменные
-        lines = [f"{k}={v}" for k, v in env._vars.items()]
+        if hasattr(env, 'as_dict'):
+            items = env.as_dict().items()
+        elif hasattr(env, '_vars'):
+            items = env._vars.items()
+        else:
+            return "Cannot retrieve environment variables.\n"
+        lines = [f"{k}={v}" for k, v in items]
         return "\n".join(lines) + "\n" if lines else "No variables set.\n"
 
     # обработка аргументов вида VAR=value
@@ -35,7 +41,7 @@ def export(username: str, *args) -> str:
         results.append(f"{key}={value}")
 
     return "Environment variables set: " + ", ".join(results) + "\n"
-    
+
 
 command = {
     "name": "export",

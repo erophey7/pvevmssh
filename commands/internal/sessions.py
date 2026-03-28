@@ -29,5 +29,6 @@ def sessions(username: str, *args) -> str:
 command = {
     "name": "sessions",
     "help": "List active SSH sessions",
-    "func": sessions
+    "func": sessions,
+    "permissions": ["admin_permission"]   # только администраторы
 }
