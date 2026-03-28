@@ -1,15 +1,14 @@
 """Command history for line editor."""
+
 import collections
 from typing import List, Optional
 
+
 class CommandHistory:
     """
-    Управление историей команд для SSH-сессий.
-
-    Особенности:
-    - хранит последние N команд
-    - поддержка навигации по истории
+    Ring buffer for command history with up/down navigation.
     """
+
     def __init__(self, max_size: int = 100):
         self._history: List[str] = []
         self._max_size = max_size
@@ -24,7 +23,7 @@ class CommandHistory:
         self._index = None
 
     def previous(self) -> Optional[str]:
-        """Вернуться к предыдущей команде (↑)"""
+        """Return previous command (↑)."""
         if not self._history:
             return None
         if self._index is None:
@@ -34,7 +33,7 @@ class CommandHistory:
         return self._history[self._index]
 
     def next(self) -> Optional[str]:
-        """Перейти к следующей команде (↓)"""
+        """Return next command (↓)."""
         if not self._history:
             return None
         if self._index is None:

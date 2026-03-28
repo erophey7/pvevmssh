@@ -1,4 +1,7 @@
-# commands/internal/whoami.py
+"""
+Show current user, group and permissions.
+"""
+
 from sshserver.session.manager import get_current_session
 
 
@@ -9,7 +12,6 @@ async def execute(username: str, *args):
 
     await terminal.output.output_str(f"\r\nYou are {username} (group: {session.extra['group_name']})\r\n")
     await terminal.output.output_str("Your permissions: " + ", ".join(session.extra["permissions"]) + "\r\n")
-    
 
 command = {
     "name": "whoami",

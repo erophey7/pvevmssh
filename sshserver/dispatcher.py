@@ -1,6 +1,5 @@
 """
-Advanced Command Dispatcher with support for categories, single-file and module commands.
-Supports permission inheritance from parent categories.
+Command dispatcher with permission inheritance and category support.
 """
 
 import asyncio
@@ -25,10 +24,8 @@ class CommandDispatcher:
         self.commands: Dict[str, Dict[str, Any]] = {}
         self._load_commands_recursively()
 
+    ########## Recursive Command Loading ##########
     def _load_commands_recursively(self, base_path: Path | None = None, parent_permissions: Set[str] = None):
-        """
-        Рекурсивная загрузка команд с наследованием прав.
-        """
         if base_path is None:
             base_path = Paths.BASE_DIR / "commands"
 
@@ -45,18 +42,15 @@ class CommandDispatcher:
             full_path = base_path / name
 
             if is_package:
-                # Это либо категория, либо command module
                 self._load_package(full_path, name, parent_permissions)
             else:
-                # Single-file команда
                 self._load_single_file(full_path, name, parent_permissions)
 
+    ########## Single‑File Command ##########
     def _load_single_file(self, file_path: Path, module_name: str, parent_perms: Set[str]):
-        """Загрузка single-file команды (xxx.py)"""
         try:
             full_name = f"commands.{module_name}"
             if file_path.parent.name != "commands":
-                # Для вложенных — строим правильный путь импорта
                 rel_path = file_path.relative_to(Paths.BASE_DIR)
                 full_name = ".".join(rel_path.with_suffix('').parts)
 
@@ -66,7 +60,6 @@ class CommandDispatcher:
                 cmd = module.command.copy()
                 cmd_name = cmd.get("name", module_name)
 
-                # Наследуем права от родительской категории, если не переопределены
                 if "permissions" not in cmd or not cmd["permissions"]:
                     cmd["permissions"] = list(parent_perms)
                 else:
@@ -77,10 +70,9 @@ class CommandDispatcher:
         except Exception as e:
             logger.error("Failed to load single-file command %s: %s", module_name, e)
 
+    ########## Package (Category or Command Module) ##########
     def _load_package(self, package_path: Path, package_name: str, parent_perms: Set[str]):
-        """Загрузка пакета — может быть категорией или command module"""
         try:
-            # Строим правильный импорт-путь
             rel_path = package_path.relative_to(Paths.BASE_DIR)
             full_name = ".".join(rel_path.parts)
             package = importlib.import_module(full_name)
@@ -88,7 +80,7 @@ class CommandDispatcher:
             cmd_config = getattr(package, "command", None)
 
             if cmd_config and isinstance(cmd_config, dict) and cmd_config.get("type") == "command":
-                # Это command module (команда-пакет)
+                # This is a command module (single command in a folder)
                 cmd = cmd_config.copy()
                 cmd_name = cmd.get("name", package_name)
 
@@ -101,20 +93,19 @@ class CommandDispatcher:
                 logger.debug("Loaded command module: %s", cmd_name)
 
             else:
-                # Это обычная категория (group)
+                # This is a category (group) – inherit its permissions
                 category_perms = set(cmd_config.get("permissions", [])) if cmd_config else set()
                 current_perms = parent_perms | category_perms
 
                 logger.debug("Entering category: %s (inherited perms: %s)", package_name, current_perms)
 
-                # Рекурсивно загружаем содержимое категории
                 self._load_commands_recursively(package_path, current_perms)
 
         except Exception as e:
             logger.error("Failed to load package %s: %s", package_name, e)
 
+    ########## Command Execution ##########
     async def handle(self, input_line: str) -> Any:
-        """Основная обработка команды"""
         try:
             parts = shlex.split(input_line)
         except ValueError as e:
@@ -127,22 +118,20 @@ class CommandDispatcher:
         args = parts[1:]
 
         if cmd_name == "help":
-            if args:                          # help <command>
+            if args:
                 return self._help_specific(args[0])
-            return self._generate_help()      # обычный help
+            return self._generate_help()
 
         cmd_config = self.commands.get(cmd_name)
         if not cmd_config:
             return f"Unknown command: '{cmd_name}'. Type 'help' for available commands."
 
-        # Проверка прав
         required = cmd_config.get("permissions", [])
         session = get_current_session()
 
         if session and not has_permission(session, required):
             return f"Permission denied. Required: {required or 'none'}"
 
-        # Выполнение
         try:
             func = cmd_config["func"]
             if asyncio.iscoroutinefunction(func):
@@ -153,8 +142,8 @@ class CommandDispatcher:
             logger.exception("Error in command '%s'", cmd_name)
             return f"Error in command '{cmd_name}': {e}"
 
+    ########## Help Generation ##########
     def _generate_help(self) -> str:
-        """Красивый общий help с группировкой по категориям и статусом прав"""
         session = get_current_session()
         user_perms = session.extra.get("permissions", set()) if session else set()
 
@@ -165,7 +154,6 @@ class CommandDispatcher:
             ""
         ]
 
-        # Группируем команды (пока просто по алфавиту, позже можно по категориям)
         sorted_cmds = sorted(self.commands.items())
 
         for name, cmd in sorted_cmds:
@@ -192,9 +180,9 @@ class CommandDispatcher:
         ])
 
         return "\n".join(lines)
-    
+
+    ########## Detailed Help ##########
     def _help_specific(self, command_name: str) -> str:
-        """Подробная справка по конкретной команде"""
         cmd = self.commands.get(command_name)
         if not cmd:
             return f"Command '{command_name}' not found."

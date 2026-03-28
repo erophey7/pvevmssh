@@ -8,33 +8,23 @@ from helpers.globals import GlobalStore
 logger = logging.getLogger(__name__)
 
 
+########## Group Resolution ##########
 def get_user_group(username: str) -> int:
     """
-    Возвращает группу пользователя.
-    
-    Сейчас: всем выдаётся группа 0 (Administrator)
-    В будущем: здесь будет запрос к базе данных.
+    Return group ID for the user.
+    Currently always 0 (Administrator) – to be replaced with DB lookup.
     """
-    # ==================== FUTURE DB LOOKUP ====================
-    # TODO: Заменить на реальный запрос к БД
-    # Пример:
-    # async def get_group_from_db(username: str) -> int:
-    #     return await db.fetchval("SELECT group_id FROM users WHERE username = $1", username)
-    #
-    # group_id = await get_group_from_db(username)
-    # return group_id if group_id is not None else 2
-    # ===========================================================
-
-    # Временная заглушка — всем Administrator
+    # TODO: Replace with real database query
     group_id = 0
     logger.debug("User '%s' assigned to group %s (Administrator) [temporary]", username, group_id)
     return group_id
 
 
+########## Permission Resolution with Inheritance ##########
 def resolve_permissions(group_id: int) -> Set[str]:
-    """Разрешает все права группы с учётом наследования через permset."""
+    """Resolve all permissions for a group, following permset inheritance."""
     config = GlobalStore.get().require("config")
-    groups: Dict[str, Any] = config.get("groups", {})   # ключи — строки
+    groups: Dict[str, Any] = config.get("groups", {})
 
     if not groups:
         logger.warning("No 'groups' section found in configuration")
@@ -48,7 +38,6 @@ def resolve_permissions(group_id: int) -> Set[str]:
             return
         visited.add(gid)
 
-        # Ключи в конфиге — строки, поэтому конвертируем
         group = groups.get(str(gid))
         if not group:
             return
@@ -62,8 +51,9 @@ def resolve_permissions(group_id: int) -> Set[str]:
     return resolved
 
 
+########## Permission Check ##########
 def has_permission(session, required_perm: str | list[str] | None) -> bool:
-    """Проверяет, есть ли у пользователя требуемое право."""
+    """Check if session's user has the required permission(s)."""
     if not required_perm:
         return True
 

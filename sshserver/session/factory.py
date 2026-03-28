@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 async def create_session(process) -> SessionInfo:
     """
-    Создаёт полностью настроенную сессию пользователя.
+    Build a fully initialized session object.
     """
     username = process.get_extra_info("username")
     client_addr = process.get_extra_info("peername")[0] if process.get_extra_info("peername") else "unknown"
@@ -30,7 +30,6 @@ async def create_session(process) -> SessionInfo:
         term_height=height,
     )
 
-    # Environment
     env = UserEnvironment()
     env.set("USER", username)
     env.set("TERM", term_type)
@@ -39,11 +38,9 @@ async def create_session(process) -> SessionInfo:
     session.extra["env"] = env
     session.extra["process"] = process
 
-    # ====================== Права пользователя ======================
     user_group = get_user_group(username)
     user_permissions = resolve_permissions(user_group)
 
-    # Получаем красивое имя группы из конфига
     config = GlobalStore.get().require("config")
     groups = config.get("groups", {})
     group_info = groups.get(str(user_group), {})
@@ -52,9 +49,7 @@ async def create_session(process) -> SessionInfo:
     session.extra["group"] = user_group
     session.extra["group_name"] = group_name
     session.extra["permissions"] = user_permissions
-    # ================================================================
 
-    # Регистрируем сессию
     SessionStore().add(session)
     current_session.set(session)
 

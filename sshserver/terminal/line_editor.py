@@ -10,25 +10,7 @@ logger = logging.getLogger(__name__)
 
 class LineEditor:
     """
-    Полноценный line editor поверх raw SSH input.
-
-    Поддержка:
-    - UTF-8 / Unicode ввод
-    - Enter
-    - Backspace
-    - Ctrl+Backspace / Ctrl+W
-    - Delete
-    - Ctrl+Delete
-    - Ctrl+C / Ctrl+D
-    - Стрелки ← ↑ → ↓
-    - Ctrl+← / Ctrl+→ / Ctrl+↑ / Ctrl+↓
-    - Home / End
-    - История команд
-
-    Shell-like логика:
-    - word  = [A-Za-z0-9_]
-    - punct = / : = - . # & и т.п.
-    - ws    = whitespace
+    Full line editor with history, word navigation, and shell‑like word classes.
     """
 
     def __init__(self, session_io):
@@ -38,10 +20,7 @@ class LineEditor:
         self._cursor: int = 0
         self.history = CommandHistory()
 
-    # ============================================================
-    # Public
-    # ============================================================
-
+    ########## Public Methods ##########
     def reset(self) -> None:
         self._chars.clear()
         self._cursor = 0
@@ -73,30 +52,18 @@ class LineEditor:
         return None
 
     async def backspace(self) -> None:
-        """
-        Обычный backspace: удалить 1 символ слева от курсора.
-        """
         if self._cursor <= 0:
             return
-
         self._cursor -= 1
         self._chars.pop(self._cursor)
         await self._redraw_line()
 
     async def ctrl_backspace(self) -> None:
-        """
-        Bash-like Ctrl+W:
-        удалить shell-word слева от курсора.
-
-        Логика:
-        1. Съесть whitespace слева
-        2. Если слева punct — удалить весь contiguous punct block
-        3. Если слева word  — удалить весь contiguous word block
-        """
+        """Delete word to the left (Ctrl+W)."""
         if self._cursor <= 0:
             return
 
-        # 1) whitespace слева
+        # Skip whitespace
         while self._cursor > 0 and self._char_class(self._chars[self._cursor - 1]) == "ws":
             self._cursor -= 1
             self._chars.pop(self._cursor)
@@ -105,9 +72,8 @@ class LineEditor:
             await self._redraw_line()
             return
 
-        # 2) удалить contiguous block слева
+        # Delete contiguous block of same class
         cls = self._char_class(self._chars[self._cursor - 1])
-
         while self._cursor > 0 and self._char_class(self._chars[self._cursor - 1]) == cls:
             self._cursor -= 1
             self._chars.pop(self._cursor)
@@ -115,28 +81,17 @@ class LineEditor:
         await self._redraw_line()
 
     async def delete(self) -> None:
-        """
-        Обычный Delete: удалить 1 символ под курсором.
-        """
         if self._cursor >= len(self._chars):
             return
-
         self._chars.pop(self._cursor)
         await self._redraw_line()
 
     async def ctrl_delete(self) -> None:
-        """
-        Bash-like Ctrl+Delete:
-        удалить shell-word справа от курсора.
-
-        Логика:
-        1. Съесть whitespace справа
-        2. Удалить contiguous block справа
-        """
+        """Delete word to the right (Ctrl+Delete)."""
         if self._cursor >= len(self._chars):
             return
 
-        # 1) whitespace справа
+        # Skip whitespace
         while self._cursor < len(self._chars) and self._char_class(self._chars[self._cursor]) == "ws":
             self._chars.pop(self._cursor)
 
@@ -144,22 +99,17 @@ class LineEditor:
             await self._redraw_line()
             return
 
-        # 2) удалить contiguous block справа
+        # Delete contiguous block of same class
         cls = self._char_class(self._chars[self._cursor])
-
         while self._cursor < len(self._chars) and self._char_class(self._chars[self._cursor]) == cls:
             self._chars.pop(self._cursor)
 
         await self._redraw_line()
 
-    # ============================================================
-    # Cursor movement
-    # ============================================================
-
+    ########## Cursor Movement ##########
     async def cursor_left(self) -> None:
         if self._cursor <= 0:
             return
-
         self._cursor -= 1
         width = self._char_width(self._chars[self._cursor])
         await self.session_io.output.output_bytes(b"\b" * width)
@@ -167,26 +117,15 @@ class LineEditor:
     async def cursor_right(self) -> None:
         if self._cursor >= len(self._chars):
             return
-
         ch = self._chars[self._cursor]
         await self.session_io.output.output_str(ch)
         self._cursor += 1
 
     async def cursor_word_left(self) -> None:
-        """
-        Bash-like Ctrl+Left:
-        перейти в начало shell-word / shell-block слева.
-
-        Пример:
-        export PATH=/usr/local/bin:/usr/bin
-                                     ^
-        шаги влево:
-        bin -> usr -> : -> bin -> local -> / -> usr -> = -> PATH -> export
-        """
         if self._cursor <= 0:
             return
 
-        # 1) пропустить whitespace слева
+        # Skip whitespace
         while self._cursor > 0 and self._char_class(self._chars[self._cursor - 1]) == "ws":
             self._cursor -= 1
 
@@ -194,31 +133,17 @@ class LineEditor:
             await self._redraw_line()
             return
 
-        # 2) взять класс блока слева
         cls = self._char_class(self._chars[self._cursor - 1])
-
-        # 3) пройти весь блок этого класса
         while self._cursor > 0 and self._char_class(self._chars[self._cursor - 1]) == cls:
             self._cursor -= 1
 
         await self._redraw_line()
 
     async def cursor_word_right(self) -> None:
-        """
-        Bash-like Ctrl+Right:
-        перейти в конец текущего/следующего shell-word / shell-block справа.
-
-        Пример:
-        !export PATH=/usr/local/bin:/usr/bin
-        export! PATH=/usr/local/bin:/usr/bin
-        export PATH!=/usr/local/bin:/usr/bin
-        export PATH=/usr!/local/bin:/usr/bin
-        ...
-        """
         if self._cursor >= len(self._chars):
             return
 
-        # 1) если стоим на whitespace — сначала пропускаем whitespace
+        # Skip whitespace
         while self._cursor < len(self._chars) and self._char_class(self._chars[self._cursor]) == "ws":
             self._cursor += 1
 
@@ -226,9 +151,7 @@ class LineEditor:
             await self._redraw_line()
             return
 
-        # 2) проходим contiguous block текущего класса
         cls = self._char_class(self._chars[self._cursor])
-
         while self._cursor < len(self._chars) and self._char_class(self._chars[self._cursor]) == cls:
             self._cursor += 1
 
@@ -246,15 +169,11 @@ class LineEditor:
         self._cursor = len(self._chars)
         await self._redraw_line()
 
-    # ============================================================
-    # History
-    # ============================================================
-
+    ########## History ##########
     async def history_up(self) -> None:
         prev = self.history.previous()
         if prev is None:
             return
-
         self._chars = list(prev)
         self._cursor = len(self._chars)
         await self._redraw_line()
@@ -263,7 +182,6 @@ class LineEditor:
         nxt = self.history.next()
         if nxt is None:
             return
-
         self._chars = list(nxt)
         self._cursor = len(self._chars)
         await self._redraw_line()
@@ -271,10 +189,7 @@ class LineEditor:
     def current_line(self) -> str:
         return "".join(self._chars)
 
-    # ============================================================
-    # Rendering
-    # ============================================================
-
+    ########## Rendering ##########
     async def _redraw_line(self) -> None:
         prompt = self._get_prompt()
         line = "".join(self._chars)
@@ -300,6 +215,7 @@ class LineEditor:
             return env.get("PS1", ">>> ")
         return ">>> "
 
+    ########## Character Utilities ##########
     def _char_width(self, ch: str) -> int:
         width = wcswidth(ch)
         return width if width > 0 else 1
@@ -308,17 +224,7 @@ class LineEditor:
         width = wcswidth(text)
         return width if width > 0 else len(text)
 
-    # ============================================================
-    # Helper
-    # ============================================================
-
     def _char_class(self, ch: str) -> str:
-        """
-        Shell-like классификация символов:
-        - ws    : whitespace
-        - word  : [A-Za-z0-9_]
-        - punct : всё остальное
-        """
         if ch.isspace():
             return "ws"
         if ch.isalnum() or ch == "_":

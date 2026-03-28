@@ -1,5 +1,5 @@
 """
-########## Export Command: Set or Display Environment Variables ##########
+Set or display environment variables.
 """
 
 from sshserver.session.manager import get_current_session
@@ -7,10 +7,6 @@ from sshserver.session.environment import UserEnvironment
 
 
 def export(username: str, *args) -> str:
-    """
-    Set or display environment variables.
-    """
-
     session = get_current_session()
     if not session:
         return "No session.\n"
@@ -21,7 +17,6 @@ def export(username: str, *args) -> str:
         session.extra['env'] = env
 
     if not args:
-        # показать все переменные
         if hasattr(env, 'as_dict'):
             items = env.as_dict().items()
         elif hasattr(env, '_vars'):
@@ -31,12 +26,11 @@ def export(username: str, *args) -> str:
         lines = [f"{k}={v}" for k, v in items]
         return "\n".join(lines) + "\n" if lines else "No variables set.\n"
 
-    # обработка аргументов вида VAR=value
     results = []
     for arg in args:
         if "=" not in arg:
             continue
-        key, value = arg.split("=", 1)  # только первый '='
+        key, value = arg.split("=", 1)
         env.set(key, value)
         results.append(f"{key}={value}")
 

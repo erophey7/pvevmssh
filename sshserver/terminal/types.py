@@ -2,7 +2,7 @@
 
 from typing import NewType
 
-# Сигнал завершения ввода (Ctrl+D на пустой строке)
+# Sentinel for Ctrl+D on empty line
 EOF = NewType("EOF", object)
 EOF = object()   # singleton
 

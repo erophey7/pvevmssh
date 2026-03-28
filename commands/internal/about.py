@@ -1,5 +1,5 @@
 """
-About command — displays information about the server and current session.
+Display server and session information.
 """
 
 from helpers.globals import GlobalStore
@@ -7,9 +7,6 @@ from sshserver.session.manager import get_current_session, SessionStore
 
 
 async def execute(username: str, *args) -> str:
-    """
-    Показывает информацию о сервере и текущей сессии.
-    """
     config = GlobalStore.get().require("config")
     session = get_current_session()
 
@@ -34,11 +31,9 @@ async def execute(username: str, *args) -> str:
             f"  Started       : {session.start_time:.0f}",
         ])
 
-    # Количество активных сессий
     active_sessions = SessionStore().count()
     lines.append(f"  Active sessions : {active_sessions}")
 
-    # Права пользователя
     user_perms = session.extra.get("permissions", set()) if session else set()
     if user_perms:
         lines.extend([
@@ -52,10 +47,8 @@ async def execute(username: str, *args) -> str:
     return "\n".join(lines)
 
 
-# ==================== Command Definition ====================
 command = {
     "name": "about",
     "help": "Show detailed information about the server and current session",
     "func": execute,
-    # permissions не указываем — будет наследоваться от категории (internal)
 }

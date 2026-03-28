@@ -1,17 +1,8 @@
-# commands/test/char.py
 """
-########## Special Characters Test ##########
+Test special characters (box drawing, blocks, Unicode).
 """
 
 def chars_test(username: str, *args) -> str:
-    """
-    ########## Display Special Character Sets ##########
-    
-    Generates a formatted string containing various special character sets,
-    including box drawing characters, block characters, shades, arrows, and Unicode symbols.
-    This is used to test the terminal's ability to display special characters correctly.
-    """
-
     lines = []
     lines.append("Special characters:")
     chars = [
@@ -29,7 +20,6 @@ def chars_test(username: str, *args) -> str:
     return "\n".join(lines)
 
 
-########## Command Definition ##########
 command = {
     "name": "chars",
     "help": "Test special characters",

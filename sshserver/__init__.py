@@ -1,7 +1,7 @@
 """
 PVE SSH Server Core Package
 
-Чистый и удобный публичный API для всего SSH-сервера.
+Exposes public API for the server, session, and terminal layers.
 """
 
 from .server import PVESSHServer, SSHServerRunner
@@ -28,6 +28,8 @@ from .terminal import (
     OutputHandler,
     PTYHandler,
     LineEditor,
+    MouseEvent,
+    MouseHandler
 )
 
 __all__ = [
@@ -37,7 +39,7 @@ __all__ = [
     "authenticate",
     "handle_client",
     "CommandDispatcher",
-    
+
     # Session
     "SessionInfo",
     "SessionStore",
@@ -47,11 +49,13 @@ __all__ = [
     "CommandHistory",
     "create_session",
     "run_session",
-    
+
     # Terminal
     "Terminal",
     "InputHandler",
     "OutputHandler",
     "PTYHandler",
     "LineEditor",
+    "MouseEvent",
+    "MouseHandler"
 ]

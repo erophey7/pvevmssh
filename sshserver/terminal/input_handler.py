@@ -12,8 +12,7 @@ logger = logging.getLogger(__name__)
 
 class InputHandler:
     """
-    Обработка входящих данных от SSH клиента.
-    Поддерживает raw bytes и полноценный line editor.
+    Processes raw input bytes, handles escape sequences, and provides line editing.
     """
 
     def __init__(self, terminal):
@@ -21,25 +20,20 @@ class InputHandler:
         self.editor = LineEditor(terminal)
         self.mouse = MouseHandler(terminal)
 
-    # ============================================================
-    # Public API
-    # ============================================================
-
+    ########## Public API ##########
     async def input_bytes(self, data: bytes):
-        """Положить сырые байты в очередь"""
         await self.terminal.input_queue.put(data)
 
     async def input_str(self, data: str, encoding="utf-8"):
-        """Положить строку в очередь"""
         await self.terminal.input_queue.put(data.encode(encoding))
 
     async def read_bytes(self) -> t.Optional[bytes]:
-        """Прочитать сырые байты"""
         return await self.terminal.input_queue.get()
 
     async def read_str(self, encoding="utf-8") -> t.Optional[str]:
         """
-        Чтение одной полноценной строки через line editor.
+        Read one complete line using the line editor.
+        Returns EOF on Ctrl+D at empty line.
         """
         self.editor.reset()
         pending = bytearray()
@@ -72,15 +66,10 @@ class InputHandler:
                 if result is not None:
                     return result
 
-    # ============================================================
-    # Core parser
-    # ============================================================
-
+    ########## Core Parser ##########
     async def _consume_pending(
         self, pending: bytearray, encoding: str = "utf-8"
     ) -> tuple[t.Optional[str], int]:
-        """Обработка одного байта/последовательности."""
-
         if not pending:
             return None, 0
 
@@ -104,6 +93,7 @@ class InputHandler:
         # Enter
         if b0 in (0x0D, 0x0A):
             line = await self.editor.enter()
+            # Handle CR+LF
             if len(pending) >= 2 and pending[1] in (0x0D, 0x0A) and pending[1] != b0:
                 return line, 2
             return line, 1
@@ -123,7 +113,7 @@ class InputHandler:
 
             if await self.mouse.feed(seq):
                 return None, seq_len
-            
+
             await self._handle_escape(seq)
             return None, seq_len
 
@@ -143,10 +133,7 @@ class InputHandler:
         await self.editor.feed_char(char)
         return None, char_len
 
-    # ============================================================
-    # Helpers
-    # ============================================================
-
+    ########## Helpers ##########
     def _utf8_char_len(self, b0: int) -> int:
         if b0 < 0x80:
             return 1
@@ -159,13 +146,11 @@ class InputHandler:
         return 1
 
     def _try_parse_escape(self, pending: bytearray) -> t.Optional[int]:
-        """
-        escape парсер.
-        """
+        """Determine length of an ANSI escape sequence."""
         if len(pending) < 2:
             return None
 
-        # ESC O ... (стрелки)
+        # ESC O ... (arrows)
         if pending[1] == ord("O"):
             return 3 if len(pending) >= 3 else None
 
@@ -173,15 +158,14 @@ class InputHandler:
         if pending[1] != ord("["):
             return 2 if len(pending) >= 2 else None
 
+        # Mouse SGR sequences
         if len(pending) > 3 and pending[2] == ord("<"):
-            # Ищем завершающий 'M' или 'm'
             for i in range(3, len(pending)):
                 if pending[i] in (ord('M'), ord('m')):
                     return i + 1
-            # Последовательность ещё не полностью пришла — ждём дальше
             return None
 
-        # Обычные CSI последовательности (заканчиваются @-~)
+        # Regular CSI sequences (end with @-~)
         for i in range(2, len(pending)):
             if 0x40 <= pending[i] <= 0x7E:
                 return i + 1
@@ -189,16 +173,14 @@ class InputHandler:
         return None
 
     async def _handle_escape(self, seq: bytes):
-        """Обработка escape-последовательностей. """
+        """Handle standard key escape sequences (arrows, delete, home, etc.)."""
         text = seq.decode("ascii", errors="ignore")
 
-        # Mouse events уже обработаны в _consume_pending.
+        # Mouse events already handled
         if text.startswith("\x1b[<"):
             return
 
-        # === Стандартные клавиши ===
-
-        # Стрелки
+        # Arrows
         if text in ("\x1b[A", "\x1bOA"):
             await self.editor.history_up()
             return
@@ -212,7 +194,7 @@ class InputHandler:
             await self.editor.cursor_left()
             return
 
-        # Ctrl + стрелки
+        # Ctrl + arrows
         if text in ("\x1b[1;5D", "\x1b[5D", "\x1b[;5D"):
             await self.editor.cursor_word_left()
             return

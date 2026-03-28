@@ -5,28 +5,28 @@ from typing import Optional, Dict
 
 from .types import SessionInfo
 
-# Context variable for current session
 current_session: contextvars.ContextVar[Optional[SessionInfo]] = contextvars.ContextVar(
     'current_session', default=None
 )
 
 
 def get_current_session() -> Optional[SessionInfo]:
-    """Получить текущую сессию из контекста."""
+    """Return the current session from context."""
     return current_session.get()
 
 
 class SessionStore:
     """
-    Singleton-хранилище всех активных сессий.
+    Singleton store of all active sessions.
     """
+
     _instance: Optional["SessionStore"] = None
-    _sessions: Dict[str, SessionInfo]          # ← аннотация на уровне класса
+    _sessions: Dict[str, SessionInfo]
 
     def __new__(cls) -> "SessionStore":
         if cls._instance is None:
             cls._instance = super().__new__(cls)
-            cls._instance._sessions = {}       # ← здесь просто присваивание
+            cls._instance._sessions = {}
         return cls._instance
 
     def add(self, session: SessionInfo) -> None:

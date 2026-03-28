@@ -1,7 +1,4 @@
-"""Core terminal handler for SSH session.
-
-Orchestrates input, output, line editing and PTY management.
-"""
+"""Core terminal handler — orchestrates input, output, and PTY."""
 
 import asyncio
 import logging
@@ -19,13 +16,8 @@ logger = logging.getLogger(__name__)
 
 class Terminal:
     """
-    Главный терминал сессии.
-    
-    Содержит:
-    - input_queue
-    - InputHandler (с LineEditor)
-    - OutputHandler
-    - PTYHandler
+    Main terminal for a session.
+    Holds input queue, input/output handlers, and PTY.
     """
 
     def __init__(self, process):
@@ -34,42 +26,35 @@ class Terminal:
         self.input_queue: asyncio.Queue[bytes | None] = asyncio.Queue()
         self.output_lock = asyncio.Lock()
 
-        # Компоненты терминала
         self.input = InputHandler(self)
         self.output = OutputHandler(self)
         self.pty = PTYHandler(self)
 
         self._input_task: asyncio.Task | None = None
         self._running = False
-
-        # Ссылка на сессию будет установлена позже
         self.session = None
 
+    ########## Lifecycle ##########
     async def start(self):
-        """Запуск фонового чтения stdin → input_queue"""
+        """Start background reading from SSH stdin."""
         if self._running:
             return
-
         self._running = True
         self._input_task = asyncio.create_task(self._feed_input())
 
     async def stop(self):
-        """Остановка терминала и очистка ресурсов"""
+        """Stop terminal and clean up resources."""
         self._running = False
-
         if self._input_task:
             self._input_task.cancel()
             with suppress(asyncio.CancelledError):
                 await self._input_task
-
         await self.pty.close()
-
-        # Разбудить всех, кто ждёт ввода
         with suppress(Exception):
             await self.input_queue.put(None)
 
+    ########## Input Feeder ##########
     async def _feed_input(self):
-        """Фоновое чтение данных из SSH stdin"""
         try:
             while self._running:
                 try:
@@ -103,20 +88,18 @@ class Terminal:
             with suppress(Exception):
                 await self.input_queue.put(None)
 
+    ########## Terminal Resize Handling ##########
     async def _handle_terminal_resize(self, exc: asyncssh.TerminalSizeChanged):
-        """Обработка изменения размера терминала"""
         try:
             cols = getattr(exc, "width", 80)
             rows = getattr(exc, "height", 24)
             pixwidth = getattr(exc, "pixwidth", 0)
             pixheight = getattr(exc, "pixheight", 0)
         except Exception:
-            # fallback
             cols, rows, pixwidth, pixheight = 80, 24, 0, 0
 
         logger.info("Terminal resized: %dx%d", cols, rows)
 
-        # Обновляем информацию в сессии
         session = get_current_session()
         if session:
             session.term_width = cols
@@ -124,6 +107,5 @@ class Terminal:
             session.extra["term_pixwidth"] = pixwidth
             session.extra["term_pixheight"] = pixheight
 
-        # Пробрасываем resize в PTY
         with suppress(Exception):
             await self.pty.resize(rows, cols, pixwidth, pixheight)

@@ -1,13 +1,11 @@
-# commands/test/mouse.py
 """
-Mouse control command.
-Usage: mouse on [mode] | mouse off | mouse status
-   mode: 0 - clicks only, 2 - clicks + motion, 3 - all motion
+Mouse tracking control and event display.
 """
 
 from sshserver.session.manager import get_current_session
 from sshserver.terminal.mouse_handler import MouseEvent
 import asyncio
+
 
 async def on_mouse_event(event: MouseEvent):
     msg = f"\r\n[Mouse] {event.state} btn={event.button} at ({event.x},{event.y})"
@@ -17,6 +15,7 @@ async def on_mouse_event(event: MouseEvent):
     if session and "terminal" in session.extra:
         terminal = session.extra["terminal"]
         await terminal.output.output_str(msg)
+
 
 async def execute(username: str, *args) -> str:
     session = get_current_session()
@@ -32,7 +31,6 @@ async def execute(username: str, *args) -> str:
     cmd = args[0].lower()
 
     if cmd == "on":
-        # Определяем режим
         mode = 0
         if len(args) > 1:
             try:
@@ -42,9 +40,7 @@ async def execute(username: str, *args) -> str:
             except ValueError:
                 return "Mode must be a number (0, 2, 3)."
 
-        # Основной режим мыши: 1000, 1002, 1003
         base_mode = 1000 if mode == 0 else (1002 if mode == 2 else 1003)
-
         await mouse.enable([base_mode, 1006])
         mouse.add_listener(on_mouse_event)
         return f"Mouse tracking ENABLED (mode {mode}, base {base_mode})"
@@ -66,7 +62,7 @@ async def execute(username: str, *args) -> str:
 
 command = {
     "name": "mouse",
-    "help": "Enable or disable mouse tracking (mouse on | mouse off)",
+    "help": "Enable or disable mouse tracking",
     "func": execute,
     "permissions": ["tester_permission"]
 }

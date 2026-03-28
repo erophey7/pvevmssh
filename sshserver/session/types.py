@@ -9,7 +9,7 @@ import time
 @dataclass
 class SessionInfo:
     """
-    Информация об активной SSH-сессии.
+    Represents an active SSH session.
     """
     uuid: str = field(default_factory=lambda: str(uuid.uuid4()))
     username: str = ""

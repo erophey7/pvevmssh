@@ -10,8 +10,7 @@ logger = logging.getLogger(__name__)
 
 async def run_session(session, terminal) -> None:
     """
-    Основной цикл сессии:
-    Приветствие → Prompt → Read line → Dispatch command → Output result
+    Main session loop: prompt, read line, dispatch, output result.
     """
     username = session.username
     dispatcher = CommandDispatcher(username)
@@ -20,7 +19,6 @@ async def run_session(session, terminal) -> None:
     await terminal.output.output_str("Type 'help' for available commands.\r\n")
 
     while True:
-        # Получаем PS1 из UserEnvironment
         env = session.extra.get("env")
         prompt = env.get("PS1", ">>> ") if hasattr(env, "get") else ">>> "
 

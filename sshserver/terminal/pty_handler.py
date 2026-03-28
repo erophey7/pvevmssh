@@ -18,12 +18,8 @@ def _set_winsize(fd: int, rows: int, cols: int, xpixels: int = 0, ypixels: int =
 
 class PTYHandler:
     """
-    Управление единственным PTY внутри SSH-сессии.
-
-    Этот PTY можно:
-    - отдать subprocess
-    - подключить к сокету
-    - использовать как raw terminal backend
+    Manage a pseudo‑terminal for the session.
+    Can be attached to a subprocess, socket, or used as a raw terminal backend.
     """
 
     def __init__(self, session_io):
@@ -37,15 +33,15 @@ class PTYHandler:
         self._write_task: asyncio.Task | None = None
         self._attached = False
 
+    ########## PTY Creation ##########
     async def ensure(self):
-        """Создать PTY, если ещё не создан"""
+        """Create PTY if it doesn't exist yet."""
         if self.master_fd is not None and self.slave_fd is not None:
             return
 
         self.master_fd, self.slave_fd = pty.openpty()
         logger.debug("PTY created: master=%s slave=%s", self.master_fd, self.slave_fd)
 
-        # При создании сразу применим текущий размер SSH-терминала
         process = self.session_io.process
         term_size = getattr(process, "term_size", None)
 
@@ -55,7 +51,7 @@ class PTYHandler:
                 _set_winsize(self.master_fd, rows, cols, pixwidth, pixheight)
 
     async def resize(self, rows: int, cols: int, xpixels: int = 0, ypixels: int = 0):
-        """Изменить размер PTY"""
+        """Resize PTY and notify owner process if any."""
         if self.master_fd is None:
             return
 
@@ -65,17 +61,11 @@ class PTYHandler:
             with suppress(ProcessLookupError):
                 os.kill(self.owner_pid, signal.SIGWINCH)
 
-        logger.debug(
-            "PTY resized: rows=%s cols=%s xpixels=%s ypixels=%s",
-            rows, cols, xpixels, ypixels
-        )
+        logger.debug("PTY resized: rows=%s cols=%s", rows, cols)
 
+    ########## Stream Bridge ##########
     async def attach_streams(self):
-        """
-        Прямой bridge:
-        SSH input -> PTY
-        PTY output -> SSH output
-        """
+        """Bridge SSH input/output with PTY."""
         await self.ensure()
 
         if self._attached:
@@ -86,7 +76,7 @@ class PTYHandler:
         self._write_task = asyncio.create_task(self._ssh_to_pty())
 
     async def detach_streams(self):
-        """Отключить bridge PTY <-> SSH"""
+        """Stop the bridge."""
         self._attached = False
 
         for task in (self._read_task, self._write_task):
@@ -99,7 +89,7 @@ class PTYHandler:
         self._write_task = None
 
     async def _pty_to_ssh(self):
-        """PTY stdout -> SSH output"""
+        """PTY output → SSH output."""
         loop = asyncio.get_running_loop()
 
         try:
@@ -111,12 +101,11 @@ class PTYHandler:
 
         except asyncio.CancelledError:
             raise
-
         except Exception as e:
-            logger.exception("PTY -> SSH bridge error: %s", e)
+            logger.exception("PTY → SSH bridge error: %s", e)
 
     async def _ssh_to_pty(self):
-        """SSH input -> PTY stdin"""
+        """SSH input → PTY input."""
         loop = asyncio.get_running_loop()
 
         try:
@@ -124,25 +113,23 @@ class PTYHandler:
                 data = await self.session_io.input.read_bytes()
                 if data is None:
                     break
-
                 await loop.run_in_executor(None, os.write, self.master_fd, data)
 
         except asyncio.CancelledError:
             raise
-
         except Exception as e:
-            logger.exception("SSH -> PTY bridge error: %s", e)
+            logger.exception("SSH → PTY bridge error: %s", e)
 
+    ########## Process Management ##########
     def get_slave_fd(self) -> int | None:
-        """Вернуть slave fd для subprocess/socket attach"""
         return self.slave_fd
 
     def set_owner_pid(self, pid: int | None):
-        """PID процесса, которому надо слать SIGWINCH"""
+        """Set PID to receive SIGWINCH on resize."""
         self.owner_pid = pid
 
     async def close(self):
-        """Полная очистка PTY"""
+        """Close PTY and release resources."""
         await self.detach_streams()
 
         for fd_name in ("master_fd", "slave_fd"):
@@ -154,43 +141,32 @@ class PTYHandler:
 
         self.owner_pid = None
 
-        
-
+    ########## Spawn Helper ##########
     async def spawn(self, program: str, *args, env=None, cwd=None, attach_streams=True, **kwargs):
         """
-        Запускает процесс с использованием PTY как управляющего терминала.
+        Spawn a process with the PTY as its controlling terminal.
 
-        Параметры:
-            program (str): путь к исполняемому файлу
-            *args: аргументы командной строки
-            env (dict, optional): окружение для процесса (по умолчанию копия os.environ)
-            cwd (str, optional): рабочая директория
-            attach_streams (bool): если True, автоматически связывает SSH-потоки с PTY
-            **kwargs: дополнительные параметры для asyncio.create_subprocess_exec
-                        (например, limit, start_new_session и т.д.)
+        This method sets up the PTY, runs the child with appropriate session
+        and terminal control, and optionally bridges I/O.
 
-        Возвращает:
-            asyncio.subprocess.Process: запущенный процесс
+        Returns:
+            asyncio.subprocess.Process
         """
         await self.ensure()
         slave_fd = self.slave_fd
 
-        # Определяем функцию настройки терминала в дочернем процессе
         def _child_setup():
             os.setsid()
             fcntl.ioctl(slave_fd, termios.TIOCSCTTY, 0)
-            # Если передан пользовательский preexec_fn, вызываем его
             user_preexec = kwargs.pop('preexec_fn', None)
             if user_preexec:
                 user_preexec()
 
-        # Подготавливаем окружение
         if env is None:
             process_env = os.environ.copy()
         else:
             process_env = env.copy()
 
-        # Запускаем процесс
         proc = await asyncio.create_subprocess_exec(
             program, *args,
             stdin=slave_fd,
@@ -203,10 +179,8 @@ class PTYHandler:
             **kwargs
         )
 
-        # Устанавливаем owner PID для SIGWINCH
         self.set_owner_pid(proc.pid)
 
-        # При необходимости прикрепляем потоки SSH <-> PTY
         if attach_streams:
             await self.attach_streams()
 
