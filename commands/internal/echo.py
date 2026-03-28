@@ -3,7 +3,7 @@
 """
 
 import re
-from sshserver.sessions import get_current_session
+from sshserver.session.manager import get_current_session
 
 
 ########## Echo Command Implementation ##########

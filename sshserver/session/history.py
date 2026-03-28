@@ -1,3 +1,4 @@
+"""Command history for line editor."""
 import collections
 from typing import List, Optional
 

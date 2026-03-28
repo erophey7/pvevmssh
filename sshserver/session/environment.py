@@ -1,3 +1,4 @@
+"""Environment management for user session."""
 import re
 from typing import Dict, Optional
 

@@ -2,7 +2,7 @@
 ########## Mouse Reporting Command ##########
 """
 
-from sshserver.sessions import get_current_session
+from sshserver.session.manager import get_current_session
 
 
 ########## Mouse Reporting Function ##########

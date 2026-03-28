@@ -2,8 +2,8 @@
 ########## Export Command: Set or Display Environment Variables ##########
 """
 
-from sshserver.sessions import get_current_session
-from sshserver.environment import UserEnvironment
+from sshserver.session.manager import get_current_session
+from sshserver.session.environment import UserEnvironment
 
 
 def export(username: str, *args) -> str:

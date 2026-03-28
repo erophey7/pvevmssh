@@ -1,5 +1,5 @@
 from helpers.globals import GlobalStore
-from sshserver.sessions import get_current_session, SessionStore
+from sshserver.session.manager import get_current_session, SessionStore
 
 
 ########## About Command Implementation ##########

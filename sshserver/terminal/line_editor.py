@@ -2,7 +2,8 @@ import typing as t
 import logging
 
 from wcwidth import wcswidth
-from sshserver.session_env.history import CommandHistory
+from sshserver.session import CommandHistory
+from .types import EOF
 
 logger = logging.getLogger(__name__)
 
@@ -68,8 +69,8 @@ class LineEditor:
 
     async def ctrl_d(self) -> t.Optional[str]:
         if not self._chars:
-            return None
-        return "__IGNORE__"
+            return EOF
+        return None
 
     async def backspace(self) -> None:
         """

@@ -3,7 +3,7 @@
 """
 
 import logging
-from sshserver.sessions import get_current_session
+from sshserver.session.manager import get_current_session
 
 logger = logging.getLogger(__name__)
 

@@ -1,80 +1,80 @@
+"""SSH connection handler — bootstrap and cleanup only."""
+
 import logging
 import asyncio
 
-from sshserver.sessions import SessionInfo, SessionStore, current_session
-from sshserver.session_io.base import SessionIOHandler
-from sshserver.session_runtime import run_session
+from sshserver.session.factory import create_session
+from sshserver.terminal.base import Terminal
+from sshserver.session.runtime import run_session
+from sshserver.session.manager import SessionStore, current_session
 
 logger = logging.getLogger(__name__)
 
 
 async def handle_client(process):
-    username = process.get_extra_info("username")
-    client_addr = process.get_extra_info("peername")[0] if process.get_extra_info("peername") else "unknown"
-
-    term_type = process.term_type or "unknown"
-    term_size = process.term_size or (0, 0, 0, 0)
-    width, height, _, _ = term_size
-
-    session = SessionInfo(
-        username=username,
-        client_addr=client_addr,
-        term_type=term_type,
-        term_width=width,
-        term_height=height,
-    )
-
-    session.extra["process"] = process
-    session.extra["env"] = {
-        "USER": username,
-        "TERM": term_type,
-        "PS1": ">>> ",
-    }
-
-    SessionStore().add(session)
-    token = current_session.set(session)
-    logger.info("Session started: %s (%s)", session.uuid, username)
-
-    session_io = SessionIOHandler(process)
-    session_io.session = session
-    session.extra["io"] = session_io
-
-    channel = process.channel
+    """
+    Основная точка входа для новой SSH-сессии.
+    Только bootstrap + cleanup. Вся логика создания сессии вынесена в factory.
+    """
+    session = None
+    terminal = None
 
     try:
-        if hasattr(channel, "set_line_mode"):
-            channel.set_line_mode(False)
-        if hasattr(channel, "set_echo"):
-            channel.set_echo(False)
-    except Exception:
-        pass
+        session = await create_session(process)
 
-    await session_io.start()
+        # Создаём терминальный слой
+        terminal = Terminal(process)
+        terminal.session = session
+        session.extra["terminal"] = terminal
 
-    try:
-        await run_session(session, session_io)
+        # Переводим канал в raw-режим
+        channel = process.channel
+        try:
+            if hasattr(channel, "set_line_mode"):
+                channel.set_line_mode(False)
+            if hasattr(channel, "set_echo"):
+                channel.set_echo(False)
+        except Exception:
+            pass
+
+        await terminal.start()
+
+        # Запускаем основной цикл сессии
+        await run_session(session, terminal)
 
     except asyncio.CancelledError:
         pass
-
     except Exception as e:
         logger.exception("Unexpected session error")
-        try:
-            await session_io.output.error_str(f"\r\nError: {e}\r\n")
-        except Exception:
-            pass
-
+        if terminal is not None:
+            try:
+                await terminal.output.error_str(f"\r\nError: {e}\r\n")
+            except Exception:
+                pass
     finally:
-        current_session.reset(token)
-        SessionStore().remove(session.uuid)
-        logger.info("Session ended: %s (%s)", session.uuid, username)
+            # === Cleanup ===
+            try:
+                # Сбрасываем контекстную переменную
+                if current_session.get() is not None:
+                    current_session.set(None)   
 
-        try:
-            await session_io.stop()
-        except Exception:
-            pass
+                # Удаляем сессию из глобального хранилища
+                if session is not None:
+                    SessionStore().remove(session.uuid)
+                    logger.info("Session ended: %s (%s)", session.uuid, session.username)
 
-        try:
-            process.exit(0)
-        except Exception:
-            pass
+            except Exception as e:
+                logger.debug("Error during session cleanup: %s", e)
+
+            # Останавливаем терминал
+            if terminal is not None:
+                try:
+                    await terminal.stop()
+                except Exception as e:
+                    logger.debug("Error stopping terminal: %s", e)
+
+            # Завершаем SSH процесс
+            try:
+                process.exit(0)
+            except Exception:
+                pass

@@ -1,55 +1,55 @@
+"""Input handling with local line discipline and line editor."""
+
 import typing as t
 import logging
 
-from sshserver.session_io.line_editor import LineEditor
+from .line_editor import LineEditor
+from .types import EOF
 
 logger = logging.getLogger(__name__)
 
 
 class InputHandler:
     """
-    Обработка входящих данных.
-
-    Поддержка:
-    - raw bytes
-    - строкового ввода
-    - локальной line discipline / line editor
+    Обработка входящих данных от SSH клиента.
+    Поддерживает raw bytes и полноценный line editor.
     """
 
-    def __init__(self, session_io):
-        self.session_io = session_io
-        self.editor = LineEditor(session_io)
+    def __init__(self, terminal):
+        self.terminal = terminal
+        self.editor = LineEditor(terminal)
 
     # ============================================================
     # Public API
     # ============================================================
 
     async def input_bytes(self, data: bytes):
-        await self.session_io.input_queue.put(data)
+        """Положить сырые байты в очередь"""
+        await self.terminal.input_queue.put(data)
 
     async def input_str(self, data: str, encoding="utf-8"):
-        await self.session_io.input_queue.put(data.encode(encoding))
+        """Положить строку в очередь"""
+        await self.terminal.input_queue.put(data.encode(encoding))
 
     async def read_bytes(self) -> t.Optional[bytes]:
-        return await self.session_io.input_queue.get()
+        """Прочитать сырые байты"""
+        return await self.terminal.input_queue.get()
 
     async def read_str(self, encoding="utf-8") -> t.Optional[str]:
         """
-        Чтение одной полноценной строки с локальной line discipline.
+        Чтение одной полноценной строки через line editor.
         """
         self.editor.reset()
         pending = bytearray()
 
         while True:
-            chunk = await self.session_io.input_queue.get()
+            chunk = await self.terminal.input_queue.get()
 
             if chunk is None:
-                line = self.editor.current_line()
-                return line if line else None
+                return self.editor.current_line() or None
 
             if not chunk:
-                line = self.editor.current_line()
-                return line if line else None
+                return self.editor.current_line() or None
 
             pending.extend(chunk)
 
@@ -64,6 +64,9 @@ class InputHandler:
                 if result == "__IGNORE__":
                     continue
 
+                if result is EOF:
+                    return EOF
+
                 if result is not None:
                     return result
 
@@ -72,62 +75,43 @@ class InputHandler:
     # ============================================================
 
     async def _consume_pending(
-        self,
-        pending: bytearray,
-        encoding: str = "utf-8"
+        self, pending: bytearray, encoding: str = "utf-8"
     ) -> tuple[t.Optional[str], int]:
-        """
-        Возвращает:
-        - (None, n)           -> обработали n байт, строка ещё не готова
-        - ("...", n)          -> готовая строка
-        - (None, 0)           -> нужно дождаться ещё байтов
-        """
+        """Обработка одного байта/последовательности."""
+
+        if not pending:
+            return None, 0
 
         b0 = pending[0]
 
-        # ------------------------------------------------------------
         # Ctrl+C
-        # ------------------------------------------------------------
         if b0 == 0x03:
             line = await self.editor.ctrl_c()
             return line, 1
 
-        # ------------------------------------------------------------
         # Ctrl+D
-        # ------------------------------------------------------------
         if b0 == 0x04:
             result = await self.editor.ctrl_d()
             return result, 1
 
-        # ------------------------------------------------------------
-        # Ctrl+W (часто приходит как Ctrl+Backspace)
-        # ------------------------------------------------------------
-        if b0 == 0x17:   # можно заменить на b0 in (0x17, 0x08): но это уже не shell like
+        # Ctrl+W (word erase)
+        if b0 == 0x17:
             await self.editor.ctrl_backspace()
             return None, 1
 
-        # ------------------------------------------------------------
-        # Enter (\r / \n)
-        # ------------------------------------------------------------
+        # Enter
         if b0 in (0x0D, 0x0A):
             line = await self.editor.enter()
-
-            # CRLF защита: если пришло \r\n или \n\r
             if len(pending) >= 2 and pending[1] in (0x0D, 0x0A) and pending[1] != b0:
                 return line, 2
-
             return line, 1
 
-        # ------------------------------------------------------------
-        # Backspace / DEL in tty mode
-        # ------------------------------------------------------------
+        # Backspace / Delete
         if b0 in (0x08, 0x7F):
             await self.editor.backspace()
             return None, 1
 
-        # ------------------------------------------------------------
-        # ANSI escape sequence
-        # ------------------------------------------------------------
+        # ANSI escape sequences
         if b0 == 0x1B:
             seq_len = self._try_parse_escape(pending)
             if seq_len is None:
@@ -137,27 +121,24 @@ class InputHandler:
             await self._handle_escape(seq)
             return None, seq_len
 
-        # ------------------------------------------------------------
-        # UTF-8 printable char
-        # ------------------------------------------------------------
+        # UTF-8 character
         char_len = self._utf8_char_len(b0)
 
         if len(pending) < char_len:
             return None, 0
 
         raw = bytes(pending[:char_len])
-
         try:
             char = raw.decode(encoding)
         except UnicodeDecodeError:
-            logger.debug("Invalid UTF-8 byte sequence: %r", raw)
+            logger.debug("Invalid UTF-8: %r", raw)
             return None, char_len
 
         await self.editor.feed_char(char)
         return None, char_len
 
     # ============================================================
-    # UTF-8 helpers
+    # Helpers
     # ============================================================
 
     def _utf8_char_len(self, b0: int) -> int:
@@ -171,107 +152,61 @@ class InputHandler:
             return 4
         return 1
 
-    # ============================================================
-    # Escape parsing
-    # ============================================================
-
     def _try_parse_escape(self, pending: bytearray) -> t.Optional[int]:
-        """
-        Поддерживаем:
-        - ESC [ A/B/C/D
-        - ESC [ 3~
-        - ESC [ 1;5D
-        - ESC [ 3;5~
-        - ESC O A/B/C/D
-        - ESC DEL
-        """
         if len(pending) < 2:
             return None
 
-        # ESC DEL / ESC BS
         if pending[1] in (0x7F, 0x08):
             return 2
 
-        # ESC O A/B/C/D
         if pending[1] == ord("O"):
-            if len(pending) < 3:
-                return None
-            return 3
+            return 3 if len(pending) >= 3 else None
 
-        # ESC [ ...
         if pending[1] != ord("["):
             return 2
 
         for i in range(2, len(pending)):
-            b = pending[i]
-            if 0x40 <= b <= 0x7E:
+            if 0x40 <= pending[i] <= 0x7E:
                 return i + 1
-
         return None
 
     async def _handle_escape(self, seq: bytes):
         text = seq.decode("ascii", errors="ignore")
 
-
-        # ------------------------------------------------------------
         # Стрелки
-        # ------------------------------------------------------------
         if text in ("\x1b[A", "\x1bOA"):
             await self.editor.history_up()
             return
-
         if text in ("\x1b[B", "\x1bOB"):
             await self.editor.history_down()
             return
-
         if text in ("\x1b[C", "\x1bOC"):
             await self.editor.cursor_right()
             return
-
         if text in ("\x1b[D", "\x1bOD"):
             await self.editor.cursor_left()
             return
 
-        # ------------------------------------------------------------
         # Ctrl + стрелки
-        # ------------------------------------------------------------
         if text in ("\x1b[1;5D", "\x1b[5D", "\x1b[;5D"):
             await self.editor.cursor_word_left()
             return
-
         if text in ("\x1b[1;5C", "\x1b[5C", "\x1b[;5C"):
             await self.editor.cursor_word_right()
             return
 
-        if text in ("\x1b[1;5A", "\x1b[5A", "\x1b[;5A"):
-            await self.editor.history_up()
-            return
-
-        if text in ("\x1b[1;5B", "\x1b[5B", "\x1b[;5B"):
-            await self.editor.history_down()
-            return
-
-        # ------------------------------------------------------------
         # Delete
-        # ------------------------------------------------------------
         if text == "\x1b[3~":
             await self.editor.delete()
             return
-
-        # ------------------------------------------------------------
-        # Ctrl + Delete
-        # ------------------------------------------------------------
         if text in ("\x1b[3;5~", "\x1b[;5~"):
             await self.editor.ctrl_delete()
             return
-        
-        # ------------------------------------------------------------
+
         # Home / End
-        # ------------------------------------------------------------
         if text in ("\x1b[H", "\x1bOH", "\x1b[1~", "\x1b[7~"):
             await self.editor.cursor_home()
             return
-
         if text in ("\x1b[F", "\x1bOF", "\x1b[4~", "\x1b[8~"):
             await self.editor.cursor_end()
             return

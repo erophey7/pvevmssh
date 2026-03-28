@@ -1,4 +1,4 @@
-from sshserver.sessions import SessionStore
+from sshserver.session.manager import SessionStore
 import time
 
 
