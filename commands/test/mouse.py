@@ -1,50 +1,45 @@
 """
-########## Mouse Reporting Command ##########
+Mouse control command.
+Usage: mouse on | mouse off
 """
 
 from sshserver.session.manager import get_current_session
+from sshserver.terminal.mouse_handler import MouseEvent
+import asyncio
 
 
-########## Mouse Reporting Function ##########
-def mouse(username: str, *args) -> str:
-    """
-    ########## Enable/Disable Mouse Reporting ##########
-    
-    Toggles mouse reporting in the terminal. Sends escape sequences to
-    enable or disable mouse tracking for SSH sessions.
-    
-    Usage: mouse [on|off]
-    """
+async def on_mouse_event(event: MouseEvent):
+    """Пример обработчика — выводит информацию о событии мыши прямо в терминал"""
+    msg = f"\r\n[Mouse] {event.state} btn={event.button} at ({event.x},{event.y})"
 
     session = get_current_session()
-    if not session:
-        return "No session found.\n"
-    process = session.extra.get('process')
-    if not process:
-        return "No process found in session.\n"
+    if session and "terminal" in session.extra:
+        terminal = session.extra["terminal"]
+        await terminal.output.output_str(msg)
 
-    # ########## Determine Enable/Disable State ##########
-    enable = False
-    if args and args[0].lower() == 'on':
-        enable = True
-    elif args and args[0].lower() == 'off':
-        enable = False
+
+async def execute(username: str, *args) -> str:
+    session = get_current_session()
+    if not session or "terminal" not in session.extra:
+        return "Error: Cannot access terminal"
+
+    terminal = session.extra["terminal"]
+    mouse = terminal.input.mouse
+
+    if not args or args[0].lower() == "on":
+        await mouse.enable(1006)
+        mouse.add_listener(on_mouse_event)
+        return "Mouse tracking ENABLED (SGR 1006)\nTry clicking or moving the mouse in the terminal."
     else:
-        # ########## Default Behavior: Show Help ##########
-        return "Usage: mouse on|off\n"
-
-    # ########## Send Escape Sequences for Mouse Reporting ##########
-    if enable:
-        process.stdout.write("\033[?1000h")   # Enable mouse reporting
-        return "Mouse reporting enabled.\n"
-    else:
-        process.stdout.write("\033[?1000l")   # Disable mouse reporting
-        return "Mouse reporting disabled.\n"
+        await mouse.disable()
+        # Опционально: удаляем слушателя
+        mouse.remove_listener(on_mouse_event)
+        return "Mouse tracking DISABLED"
 
 
-########## Command Definition ##########
 command = {
     "name": "mouse",
-    "help": "Enable or disable mouse reporting",
-    "func": mouse
+    "help": "Enable or disable mouse tracking (mouse on | mouse off)",
+    "func": execute,
+    "permissions": []
 }

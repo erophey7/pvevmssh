@@ -4,6 +4,7 @@ import typing as t
 import logging
 
 from .line_editor import LineEditor
+from .mouse_handler import MouseHandler
 from .types import EOF
 
 logger = logging.getLogger(__name__)
@@ -18,6 +19,7 @@ class InputHandler:
     def __init__(self, terminal):
         self.terminal = terminal
         self.editor = LineEditor(terminal)
+        self.mouse = MouseHandler(terminal)
 
     # ============================================================
     # Public API
@@ -118,6 +120,10 @@ class InputHandler:
                 return None, 0
 
             seq = bytes(pending[:seq_len])
+
+            if await self.mouse.feed(seq):
+                return None, seq_len
+            
             await self._handle_escape(seq)
             return None, seq_len
 
@@ -153,25 +159,45 @@ class InputHandler:
         return 1
 
     def _try_parse_escape(self, pending: bytearray) -> t.Optional[int]:
+        """
+        Улучшенный парсер, специально поддерживающий mouse SGR sequences.
+        """
         if len(pending) < 2:
             return None
 
-        if pending[1] in (0x7F, 0x08):
-            return 2
-
+        # ESC O ... (стрелки)
         if pending[1] == ord("O"):
             return 3 if len(pending) >= 3 else None
 
+        # ESC [ ...
         if pending[1] != ord("["):
-            return 2
+            return 2 if len(pending) >= 2 else None
 
+        # === СПЕЦИАЛЬНАЯ ОБРАБОТКА MOUSE SGR ===
+        if len(pending) > 3 and pending[2] == ord("<"):
+            # Ищем завершающий 'M' или 'm'
+            for i in range(3, len(pending)):
+                if pending[i] in (ord('M'), ord('m')):
+                    return i + 1
+            # Последовательность ещё не полностью пришла — ждём дальше
+            return None
+
+        # Обычные CSI последовательности (заканчиваются @-~)
         for i in range(2, len(pending)):
             if 0x40 <= pending[i] <= 0x7E:
                 return i + 1
+
         return None
 
     async def _handle_escape(self, seq: bytes):
+        """Обработка escape-последовательностей. Mouse events уже обработаны раньше."""
         text = seq.decode("ascii", errors="ignore")
+
+        # Mouse events уже обработаны в _consume_pending, поэтому здесь их пропускаем
+        if text.startswith("\x1b[<"):
+            return
+
+        # === Стандартные клавиши ===
 
         # Стрелки
         if text in ("\x1b[A", "\x1bOA"):
