@@ -2,22 +2,13 @@ import logging
 
 
 
-############ Logger Initialization ############
+########## Authentication Handler ##########
 logger = logging.getLogger(__name__)
 
 async def authenticate(username: str, password: str = None, pkey: str = None):
     """
-    ########## User Authentication Handler ##########
-    
-    Async function to handle user authentication for SSH connections.
-    
-    Parameters:
-        username (str): Username of the connecting client
-        password (str, optional): Password provided by the client
-        key (str, optional): Public key provided by the client
-    
-    Returns:
-        bool: True if authentication is successful, False otherwise
+    Temporary authenticator: accepts any password and any key.
+    In future: database lookup with proper validation.
     """
     logger.debug(f"Authenticating user: {username}, password: {password}, key: {pkey}")
 
@@ -39,7 +30,7 @@ async def authenticate(username: str, password: str = None, pkey: str = None):
 
 
 
-    # Temporary implementation: allow any login/password combination
+    # For now, just accept all logins
     status = True
     actual_username = username[:-1]
 

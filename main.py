@@ -9,7 +9,7 @@ from helpers.globals import GlobalStore
 from sshserver.server import SSHServerRunner
 
 
-############ Setup Logging Configuration ############
+########## Logging Setup ##########
 def setup_logging(level: str = "DEBUG") -> None:
     """Configure root logger with specified log level and format."""
     logging.basicConfig(
@@ -18,27 +18,20 @@ def setup_logging(level: str = "DEBUG") -> None:
     )
 
 
-############ Main Async Function ############
+########## Main Entry Point ##########
 async def main() -> int:
     """
-    ########## Main Asynchronous Entry Point ##########
-    
-    Primary async function that initializes global objects,
-    loads configuration, and starts the SSH server.
+    Bootstrap the server: create directories, load config, start SSH.
     """
-    # ########## Initialize Paths and SSH Host Key ##########
     Paths.init()
     Paths.ensure_ssh_host_key()
 
-    # ########## Load Configuration ##########
     config = Config()
     setup_logging(config.get("logger.level", "DEBUG"))
 
-    # ########## Initialize Global Store ##########
     g = GlobalStore()
     g.set("config", config)
 
-    # ########## Start SSH Server ##########
     runner = SSHServerRunner()
     try:
         await runner.start()
@@ -50,6 +43,5 @@ async def main() -> int:
     return 0
 
 
-############ Main Execution Block ############
 if __name__ == "__main__":
     sys.exit(asyncio.run(main()))
