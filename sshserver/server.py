@@ -37,10 +37,10 @@ class PVESSHServer(asyncssh.SSHServer):
 
         if "@" in username:
             self._auth_mode = "password_only"
-            logger.info(f"Auth mode for {username}: password only")
+            logger.debug(f"Auth mode for {username}: password only")
         else:
             self._auth_mode = "publickey_only"
-            logger.info(f"Auth mode for {username}: public key only")
+            logger.debug(f"Auth mode for {username}: public key only")
 
         return True
 
@@ -49,15 +49,15 @@ class PVESSHServer(asyncssh.SSHServer):
         enabled = config.get("auth.password_enabled", True)
 
         if not enabled:
-            logger.info("Password auth disabled by config")
+            logger.debug("Password auth disabled by config")
             return False
 
         allowed = self._auth_mode == "password_only"
 
         if allowed:
-            logger.info(f"Password auth enabled for {self._username}")
+            logger.debug(f"Password auth enabled for {self._username}")
         else:
-            logger.info(f"Password auth denied for {self._username}: key-only account")
+            logger.debug(f"Password auth denied for {self._username}: key-only account")
 
         return allowed
 
@@ -66,15 +66,15 @@ class PVESSHServer(asyncssh.SSHServer):
         enabled = config.get("auth.password_enabled", True)
 
         if not enabled:
-            logger.info("Keyboard-interactive auth disabled by config")
+            logger.debug("Keyboard-interactive auth disabled by config")
             return False
 
         allowed = self._auth_mode == "password_only"
 
         if allowed:
-            logger.info(f"Keyboard-interactive auth enabled for {self._username}")
+            logger.debug(f"Keyboard-interactive auth enabled for {self._username}")
         else:
-            logger.info(f"Keyboard-interactive auth denied for {self._username}: key-only account")
+            logger.debug(f"Keyboard-interactive auth denied for {self._username}: key-only account")
 
         return allowed
 
@@ -83,15 +83,15 @@ class PVESSHServer(asyncssh.SSHServer):
         enabled = config.get("auth.ssh_key_enabled", True)
 
         if not enabled:
-            logger.info("Public key auth disabled by config")
+            logger.debug("Public key auth disabled by config")
             return False
 
         allowed = self._auth_mode == "publickey_only"
 
         if allowed:
-            logger.info(f"Public key auth enabled for {self._username}")
+            logger.debug(f"Public key auth enabled for {self._username}")
         else:
-            logger.info(f"Public key auth denied for {self._username}: password-only account")
+            logger.debug(f"Public key auth denied for {self._username}: password-only account")
 
         return allowed
 
