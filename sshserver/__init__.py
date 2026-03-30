@@ -5,7 +5,7 @@ Exposes public API for the server, session, and terminal layers.
 """
 
 from .server import PVESSHServer, SSHServerRunner
-from .auth import authenticate
+from sshserver.auth import password_auth, key_auth
 from .handlers import handle_client
 from .dispatcher import CommandDispatcher
 
@@ -36,7 +36,8 @@ __all__ = [
     # Core server
     "PVESSHServer",
     "SSHServerRunner",
-    "authenticate",
+    "password_auth",
+    "key_auth",
     "handle_client",
     "CommandDispatcher",
 

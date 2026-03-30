@@ -17,6 +17,9 @@ async def handle_client(process):
     terminal = None
 
     try:
+        actual_username = process.get_extra_info("username")
+        process.username = actual_username
+
         session = await create_session(process)
 
         terminal = Terminal(process)

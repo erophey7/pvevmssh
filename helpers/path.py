@@ -18,9 +18,13 @@ class Paths:
     SSH_DIR = DATA_DIR / "ssh"
     LOG_DIR = DATA_DIR / "logs"
     CONFIG_DIR = DATA_DIR
+    SQLITE_DIR = DATA_DIR
+    DB_MASTERKEY_DIR = DATA_DIR
 
     SSH_HOST_KEY = SSH_DIR / "ssh_host_key"
     CONFIG_FILE = CONFIG_DIR / "config.json"
+    SQLITE_FILE = SQLITE_DIR / "database.db"
+    DB_MASTERKEY_FILE = DB_MASTERKEY_DIR / "master.key"
 
     @staticmethod
     def init() -> None:
@@ -28,6 +32,8 @@ class Paths:
         try:
             Paths.DATA_DIR.mkdir(parents=True, exist_ok=True)
             Paths.SSH_DIR.mkdir(parents=True, exist_ok=True)
+            Paths.SQLITE_DIR.mkdir(parents=True, exist_ok=True)
+            Paths.DB_MASTERKEY_DIR.mkdir(parents=True, exist_ok=True)
             Paths.LOG_DIR.mkdir(parents=True, exist_ok=True)
 
             logger.debug("Directories initialized: %s, %s, %s",
