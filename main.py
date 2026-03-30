@@ -2,6 +2,8 @@
 import asyncio
 import sys
 import logging
+from pathlib import Path
+from datetime import datetime
 
 from helpers.path import Paths
 from helpers.config import Config
@@ -10,12 +12,24 @@ from database.client import Database
 from sshserver.server import SSHServerRunner
 
 
-def setup_logging(level: str = "DEBUG"):
-    logging.basicConfig(
-        level=getattr(logging, level.upper(), logging.DEBUG),
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S"
-    )
+def setup_logging(
+        level: str = "DEBUG",
+        log_files: bool = False,
+        log_dir: str = str(Paths.LOG_DIR),
+    ):
+        handlers = [logging.StreamHandler()]
+
+        if log_files:
+            log_path = Path(log_dir) / f"{datetime.now():%Y-%m-%d_%H-%M-%S}.log"
+            handlers.append(logging.FileHandler(log_path, encoding="utf-8"))
+
+        logging.basicConfig(
+            level=getattr(logging, level.upper(), logging.DEBUG),
+            format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+            handlers=handlers,
+            force=True,
+        )
 
 async def _init_users_table(db, default_group):
     """Создаёт таблицу users, если её нет."""
@@ -38,15 +52,15 @@ async def _init_users_table(db, default_group):
 
 async def main() -> int:
     try:
-        # 1. Инициализация путей и базовых файлов
         Paths.init()
         Paths.ensure_ssh_host_key()
 
-        # 2. Загрузка конфигурации
         config = Config()
-        setup_logging(config.get("logger.level", "DEBUG"))
+        setup_logging(level=config.get("logger.level", "DEBUG"), 
+                      log_files=config.get("logger.log_files", False), 
+                      log_dir=config.get("logger.log_dir", str(Paths.LOG_DIR))
+        )
 
-        # 3. Инициализация базы данных
         db_config = config.get("db", {})
         db_type = db_config.get("type", "sqlite").lower()
 
@@ -71,14 +85,12 @@ async def main() -> int:
         await _init_users_table(db, config.get("auth.default_group"))
         logging.info(f"Connected to {db_type.upper()} database")
 
-        # 4. Сохраняем в GlobalStore
         g = GlobalStore()
         g.set("config", config)
         g.set("db", db)
 
         logging.info("PVE SSH Server initialized successfully")
 
-        # 5. Запуск SSH сервера
         runner = SSHServerRunner()
         await runner.start()
 

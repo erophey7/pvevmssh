@@ -23,7 +23,9 @@ class Config:
                 "max_user_sessions": 10
             },
             "logger": {
-                "level": "DEBUG"
+                "level": "INFO",
+                "log_files": True,
+                "log_dir": str(Paths.LOG_DIR)
             },
             "db": {
                 "type": "sqlite",
