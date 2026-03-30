@@ -113,6 +113,9 @@ class PVESSHServer(asyncssh.SSHServer):
             return False
 
         result = await password_auth(username, password)
+        # setup valid name
+        self._conn._username = result.get("actual_username", username)
+        logger.debug(f"settuped username {result.get("actual_username", username)} for connection")
         return result.get("status", False)
 
 

@@ -35,6 +35,11 @@ class Config:
                 "password_enabled": True,
                 "default_group": "2"
             },
+            "pve": {
+                "main_node_host": "https://example.com:8006",
+                "ssl_verity": False,
+                "timeout": 3
+            },
             "groups": {
 		        "0": {
 		        	"name": "Administrator",

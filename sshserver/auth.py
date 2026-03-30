@@ -7,6 +7,8 @@ from helpers.globals import GlobalStore
 from helpers.path import Paths
 from helpers.crypto import encrypt, decrypt
 
+from pveapi import is_proxmox_token_valid
+
 logger = logging.getLogger(__name__)
 
 
@@ -169,7 +171,16 @@ async def _check_api_key(api_key: str, api_secret: str) -> bool:
     """Временная заглушка проверки API-ключа."""
     if api_secret is None:
         raise TypeError("api_secret is None")
-    return True
+    config = GlobalStore.get().require("config")
+    host = config.get("pve.main_node_host")
+    ssl_verity = config.get("pve.ssl_verity")
+    timeout = config.get("pve.timeout")
+    return await is_proxmox_token_valid(host=host, 
+                                        token_id=api_key, 
+                                        token_secret=api_secret, 
+                                        verify_ssl=ssl_verity,
+                                        timeout=timeout
+                                        )
 
 
 def _parse_ssh_keys(ssh_keys_raw: Optional[str]) -> list[str]:
