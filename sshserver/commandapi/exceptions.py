@@ -1,18 +1,25 @@
-class CommandError(Exception):
-    """Базовое исключение команд."""
-    pass
+"""Исключения CommandAPI v3.0"""
 
+class CommandError(Exception):
+    """Базовое исключение для всех ошибок команд."""
+    pass
 
 class CommandPermissionError(CommandError):
-    """Недостаточно прав."""
+    """Недостаточно прав для выполнения действия."""
     pass
-
 
 class CommandArgumentError(CommandError):
-    """Ошибка парсинга аргументов."""
+    """Ошибка разбора аргументов команды."""
     pass
 
-
 class CommandAbort(CommandError):
-    """Команда прервана пользователем (например, confirm=False)."""
+    """Операция отменена пользователем (confirm, Ctrl+C и т.п.)."""
+    pass
+
+class CommandNotFoundError(CommandError):
+    """Команда не найдена (внутреннее использование)."""
+    pass
+
+class CommandRuntimeError(CommandError):
+    """Ошибка во время выполнения (PTY, DB, сеть и т.д.)."""
     pass
