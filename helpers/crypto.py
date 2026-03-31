@@ -2,15 +2,15 @@
 Cryptography utilities — encryption of sensitive data (api_secret etc.)
 """
 
-import os
-import base64
 from helpers.path import Paths
 from helpers.globals import GlobalStore
+
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 import logging
+import os
+import base64
+from pathlib import Path
 
-
-from helpers.path import Paths
 
 logger = logging.getLogger(__name__)
 
@@ -18,9 +18,9 @@ logger = logging.getLogger(__name__)
 def _get_master_key() -> bytes:
     """Получает или создаёт master key."""
     config = GlobalStore.get().require("config")
-    key_file = config.get("db.masterkey_file", str(Paths.DB_MASTERKEY_FILE))
+    key_file = Path(config.get("db.masterkey_file", str(Paths.DB_MASTERKEY_FILE)))
 
-    if key_file.exists():
+    if key_file.is_file():
         return key_file.read_bytes()
 
     # Генерируем новый мастер-ключ

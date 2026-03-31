@@ -2,13 +2,14 @@
 Display server and session information.
 """
 
-from helpers.globals import GlobalStore
-from sshserver.session.manager import get_current_session, SessionStore
+from sshserver.commandapi import CommandAPI
+from sshserver.session.manager import SessionStore
 
 
-async def execute(username: str, *args) -> str:
-    config = GlobalStore.get().require("config")
-    session = get_current_session()
+async def execute(api: CommandAPI) -> str | None:
+    config = api.config
+    session = api.session
+    username = api.username
 
     lines = [
         "╔══════════════════════════════════════════════════════════════╗",
@@ -34,7 +35,7 @@ async def execute(username: str, *args) -> str:
     active_sessions = SessionStore().count()
     lines.append(f"  Active sessions : {active_sessions}")
 
-    user_perms = session.extra.get("permissions", set()) if session else set()
+    user_perms = api.permissions
     if user_perms:
         lines.extend([
             "",

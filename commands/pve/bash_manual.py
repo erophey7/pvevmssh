@@ -6,10 +6,8 @@ import asyncio
 import os
 import fcntl
 import termios
-import logging
-from sshserver.session.manager import get_current_session
 
-logger = logging.getLogger(__name__)
+from sshserver.commandapi import CommandAPI
 
 
 def _setup_pty(slave_fd: int):
@@ -18,15 +16,14 @@ def _setup_pty(slave_fd: int):
     fcntl.ioctl(slave_fd, termios.TIOCSCTTY, 0)
 
 
-async def execute(username: str, *args) -> None:
-    session = get_current_session()
-    terminal = session.extra["terminal"]
-    pty = terminal.pty
-    env = session.extra["env"]
+async def execute(api: CommandAPI) -> None:
+    pty = api.pty
+    env = api.env
 
     await pty.ensure()
     slave_fd = pty.get_slave_fd()
 
+    # Собираем окружение для процесса
     process_env = os.environ.copy()
     term = env.get("TERM")
     if term:
@@ -34,6 +31,10 @@ async def execute(username: str, *args) -> None:
     else:
         process_env.setdefault("TERM", "xterm-256color")
 
+    # Синхронизируем размер окна
+    await pty.resize(api.rows, api.cols)
+
+    # Подключаем потоки PTY к SSH
     await pty.attach_streams()
 
     proc = await asyncio.create_subprocess_exec(

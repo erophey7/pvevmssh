@@ -22,8 +22,8 @@ class PTYHandler:
     Can be attached to a subprocess, socket, or used as a raw terminal backend.
     """
 
-    def __init__(self, session_io):
-        self.session_io = session_io
+    def __init__(self, terminal):
+        self.terminal = terminal
 
         self.master_fd: int | None = None
         self.slave_fd: int | None = None
@@ -42,7 +42,7 @@ class PTYHandler:
         self.master_fd, self.slave_fd = pty.openpty()
         logger.debug("PTY created: master=%s slave=%s", self.master_fd, self.slave_fd)
 
-        process = self.session_io.process
+        process = self.terminal.process
         term_size = getattr(process, "term_size", None)
 
         if term_size:
@@ -97,7 +97,7 @@ class PTYHandler:
                 data = await loop.run_in_executor(None, os.read, self.master_fd, 4096)
                 if not data:
                     break
-                await self.session_io.output.output_bytes(data)
+                await self.terminal.output.output_bytes(data)
 
         except asyncio.CancelledError:
             raise
@@ -110,7 +110,7 @@ class PTYHandler:
 
         try:
             while self._attached and self.master_fd is not None:
-                data = await self.session_io.input.read_bytes()
+                data = await self.terminal.input.read_bytes()
                 if data is None:
                     break
                 await loop.run_in_executor(None, os.write, self.master_fd, data)

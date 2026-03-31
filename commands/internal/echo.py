@@ -2,10 +2,12 @@
 Echo arguments with variable expansion and escape sequence handling.
 """
 
-from sshserver.session.manager import get_current_session
+from sshserver.commandapi import CommandAPI, CommandArgumentError
 
 
-def echo(username: str, *args) -> str:
+async def execute(api: CommandAPI) -> str | None:
+    args = api.args
+
     if not args:
         return ""
 
@@ -20,18 +22,8 @@ def echo(username: str, *args) -> str:
         else:
             output_args.append(arg)
 
-    session = get_current_session()
-    env = session.extra.get('env') if session else None
-
     def expand_vars(text: str) -> str:
-        if not env:
-            return text
-        if hasattr(env, 'substitute'):
-            return env.substitute(text)
-        # fallback for dict
-        for key, val in env.items():
-            text = text.replace(f"${key}", val)
-        return text
+        return api.env_substitute(text)
 
     def strip_quotes(s: str) -> str:
         if (s.startswith('"') and s.endswith('"')) or (s.startswith("'") and s.endswith("'")):
@@ -58,5 +50,5 @@ def echo(username: str, *args) -> str:
 command = {
     "name": "echo",
     "help": "Display arguments with variable expansion (default: interpret escapes)",
-    "func": echo
+    "func": execute
 }

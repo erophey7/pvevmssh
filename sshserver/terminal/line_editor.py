@@ -13,17 +13,20 @@ class LineEditor:
     Full line editor with history, word navigation, and shell‑like word classes.
     """
 
-    def __init__(self, session_io):
-        self.session_io = session_io
+    def __init__(self, terminal):
+        self.terminal = terminal
 
         self._chars: list[str] = []
         self._cursor: int = 0
+        self._last_cursor_row: int = 0
         self.history = CommandHistory()
+        self.echo: bool = True
 
     ########## Public Methods ##########
     def reset(self) -> None:
         self._chars.clear()
         self._cursor = 0
+        self._last_cursor_row = 0
         self.history.reset_index()
 
     async def feed_char(self, char: str) -> None:
@@ -32,7 +35,8 @@ class LineEditor:
         await self._redraw_line()
 
     async def enter(self) -> str:
-        await self.session_io.output.output_bytes(b"\r\n")
+        self._last_cursor_row = 0
+        await self.terminal.output.output_bytes(b"\r\n")
         line = "".join(self._chars)
 
         if line.strip():
@@ -41,9 +45,10 @@ class LineEditor:
         return line
 
     async def ctrl_c(self) -> str:
+        self._last_cursor_row = 0
         self._chars.clear()
         self._cursor = 0
-        await self.session_io.output.output_bytes(b"^C\r\n")
+        await self.terminal.output.output_bytes(b"^C\r\n")
         return ""
 
     async def ctrl_d(self) -> t.Optional[str]:
@@ -112,14 +117,14 @@ class LineEditor:
             return
         self._cursor -= 1
         width = self._char_width(self._chars[self._cursor])
-        await self.session_io.output.output_bytes(b"\b" * width)
+        await self._redraw_line()
 
     async def cursor_right(self) -> None:
         if self._cursor >= len(self._chars):
             return
         ch = self._chars[self._cursor]
-        await self.session_io.output.output_str(ch)
         self._cursor += 1
+        await self._redraw_line()
 
     async def cursor_word_left(self) -> None:
         if self._cursor <= 0:
@@ -195,21 +200,44 @@ class LineEditor:
         line = "".join(self._chars)
         left = "".join(self._chars[:self._cursor])
 
-        out = b"\r"
+        term_width = self.terminal.session.term_width or 80
+
+        prompt_width = self._text_width(prompt)
+        total_n = prompt_width + self._text_width(line)
+        cursor_n = prompt_width + self._text_width(left)
+
+        def pos(n: int) -> tuple[int, int]:
+            """Возвращает (row, col_1based) после печати n символов."""
+            if n == 0:
+                return 0, 1
+            if n % term_width == 0:
+                # Pending wrap: курсор физически на последней колонке текущей строки
+                return n // term_width - 1, term_width
+            return n // term_width, n % term_width + 1
+
+        end_row, _ = pos(total_n)
+        cursor_row, cursor_col = pos(cursor_n)
+
+        out = b""
+        if self._last_cursor_row > 0:
+            out += f"\x1b[{self._last_cursor_row}A".encode()
+        out += b"\r"
+
         out += (prompt + line).encode("utf-8", errors="replace")
-        out += b"\x1b[K"
+        out += b"\x1b[J"
 
-        total_width = self._text_width(line)
-        left_width = self._text_width(left)
-        move_left = total_width - left_width
+        rows_up = end_row - cursor_row
+        if rows_up > 0:
+            out += f"\x1b[{rows_up}A".encode()
+        out += f"\x1b[{cursor_col}G".encode()
 
-        if move_left > 0:
-            out += b"\b" * move_left
+        self._last_cursor_row = cursor_row
 
-        await self.session_io.output.output_bytes(out)
+        if self.echo:
+            await self.terminal.output.output_bytes(out)
 
     def _get_prompt(self) -> str:
-        session = getattr(self.session_io, "session", None)
+        session = getattr(self.terminal, "session", None)
         if session:
             env = session.extra.get("env", {})
             return env.get("PS1", ">>> ")

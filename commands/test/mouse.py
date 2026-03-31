@@ -2,12 +2,13 @@
 Mouse tracking control and event display.
 """
 
+from sshserver.commandapi import CommandAPI, CommandArgumentError
 from sshserver.session.manager import get_current_session
 from sshserver.terminal.mouse_handler import MouseEvent
-import asyncio
 
 
 async def on_mouse_event(event: MouseEvent):
+    """Обработчик событий мыши. Использует старый способ получения сессии."""
     msg = f"\r\n[Mouse] {event.state} btn={event.button} at ({event.x},{event.y})"
     if event.wheel:
         msg += f" wheel={event.wheel}"
@@ -17,13 +18,9 @@ async def on_mouse_event(event: MouseEvent):
         await terminal.output.output_str(msg)
 
 
-async def execute(username: str, *args) -> str:
-    session = get_current_session()
-    if not session or "terminal" not in session.extra:
-        return "Error: Cannot access terminal"
-
-    terminal = session.extra["terminal"]
-    mouse = terminal.input.mouse
+async def execute(api: CommandAPI) -> str | None:
+    mouse = api.mouse
+    args = api.args
 
     if not args:
         return "Usage: mouse on [mode] | mouse off | mouse status"
@@ -41,12 +38,12 @@ async def execute(username: str, *args) -> str:
                 return "Mode must be a number (0, 2, 3)."
 
         base_mode = 1000 if mode == 0 else (1002 if mode == 2 else 1003)
-        await mouse.enable([base_mode, 1006])
+        await api.mouse_enable([base_mode, 1006])
         mouse.add_listener(on_mouse_event)
         return f"Mouse tracking ENABLED (mode {mode}, base {base_mode})"
 
     elif cmd == "off":
-        await mouse.disable()
+        await api.mouse_disable()
         mouse.remove_listener(on_mouse_event)
         return "Mouse tracking DISABLED"
 

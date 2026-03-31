@@ -2,7 +2,12 @@
 Test special characters (box drawing, blocks, Unicode).
 """
 
-def chars_test(username: str, *args) -> str:
+from sshserver.commandapi import CommandAPI
+
+
+async def execute(api: CommandAPI) -> str | None:
+    api.require_permission("tester_permission")
+
     lines = []
     lines.append("Special characters:")
     chars = [
@@ -14,6 +19,7 @@ def chars_test(username: str, *args) -> str:
     ]
     for name, ch in chars:
         lines.append(f"{name}: {ch}")
+
     lines.append("\nUnicode symbols (if supported):")
     unicode_chars = ["∀", "∁", "∂", "∃", "∄", "∅", "∆", "∇", "∈", "∉", "∊", "∋", "∌", "∍", "∎", "∏", "∐", "∑", "−", "∓", "∔", "∕", "∖", "∗", "∘", "∙", "√", "∛", "∜", "∝", "∞", "∟", "∠", "∡", "∢", "∣", "∤", "∥", "∧", "∨", "∩", "∪", "∫", "∬", "∭", "∮", "∯", "∰", "∱", "∲", "∳"]
     lines.append(" ".join(unicode_chars))
@@ -23,6 +29,6 @@ def chars_test(username: str, *args) -> str:
 command = {
     "name": "chars",
     "help": "Test special characters",
-    "func": chars_test,
+    "func": execute,
     "permissions": ["tester_permission"]
 }

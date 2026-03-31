@@ -2,16 +2,17 @@
 Show current user, group and permissions.
 """
 
-from sshserver.session.manager import get_current_session
+from sshserver.commandapi import CommandAPI
 
 
-async def execute(username: str, *args):
-    global terminal
-    session = get_current_session()
-    terminal = session.extra["terminal"]
+async def execute(api: CommandAPI) -> str | None:
+    session = api.session
+    username = api.username
+    group_name = session.extra.get('group_name', 'Unknown')
+    perms = ', '.join(sorted(api.permissions)) if api.permissions else 'none'
 
-    await terminal.output.output_str(f"\r\nYou are {username} (group: {session.extra['group_name']})\r\n")
-    await terminal.output.output_str("Your permissions: " + ", ".join(session.extra["permissions"]) + "\r\n")
+    return f"You are {username} (group: {group_name})\nYour permissions: {perms}\n"
+
 
 command = {
     "name": "whoami",

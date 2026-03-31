@@ -2,7 +2,12 @@
 ANSI color test (standard, bright, 256‑color palette).
 """
 
-def color(username: str, *args) -> str:
+from sshserver.commandapi import CommandAPI
+
+
+async def execute(api: CommandAPI) -> str | None:
+    api.require_permission("tester_permission")
+
     lines = []
     lines.append("ANSI Color Test:\n")
 
@@ -32,6 +37,6 @@ def color(username: str, *args) -> str:
 command = {
     "name": "color",
     "help": "Display ANSI color test",
-    "func": color,
+    "func": execute,
     "permissions": ["tester_permission"]
 }

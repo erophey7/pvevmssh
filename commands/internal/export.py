@@ -2,21 +2,15 @@
 Set or display environment variables.
 """
 
-from sshserver.session.manager import get_current_session
-from sshserver.session.environment import UserEnvironment
+from sshserver.commandapi import CommandAPI
 
 
-def export(username: str, *args) -> str:
-    session = get_current_session()
-    if not session:
-        return "No session.\n"
-
-    env = session.extra.get('env')
-    if not env or not isinstance(env, UserEnvironment):
-        env = UserEnvironment()
-        session.extra['env'] = env
+async def execute(api: CommandAPI) -> str | None:
+    env = api.env
+    args = api.args
 
     if not args:
+        # Показать все переменные окружения
         if hasattr(env, 'as_dict'):
             items = env.as_dict().items()
         elif hasattr(env, '_vars'):
@@ -31,7 +25,7 @@ def export(username: str, *args) -> str:
         if "=" not in arg:
             continue
         key, value = arg.split("=", 1)
-        env.set(key, value)
+        api.env_set(key, value)
         results.append(f"{key}={value}")
 
     return "Environment variables set: " + ", ".join(results) + "\n"
@@ -40,5 +34,5 @@ def export(username: str, *args) -> str:
 command = {
     "name": "export",
     "help": "Set or display environment variables",
-    "func": export
+    "func": execute
 }
