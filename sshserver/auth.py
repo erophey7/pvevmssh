@@ -134,33 +134,32 @@ async def key_auth(username: str, pkey) -> Dict[str, Any]:
 
     for saved_key_str in saved_keys:
         try:
-            saved_key = asyncssh.import_public_key(saved_key_str.strip())
-            if pkey == saved_key:
-                logger.info(f"Public key authentication SUCCESS for {username}")
-                return {"status": True, "actual_username": username}
+            saved_key = asyncssh.import_public_key(saved_key_str)
+            logger.debug(f"public key: {saved_key.get_fingerprint()}")
+            logger.debug(f"pkey key: {pkey.get_fingerprint()}")
+            if pkey.public_data == saved_key.public_data:
+
+                record = await db.fetch_one(
+                    "SELECT api_key, api_secret FROM users WHERE username = ?",
+                    (username,)
+                )
+                if record:
+                    stored_api_key = record[0]
+                    stored_api_secret = record[1]
+
+                    if stored_api_key and stored_api_secret:
+                        try:
+                            stored_api_secret = decrypt(stored_api_secret)
+
+                            if await _check_api_key(stored_api_key, stored_api_secret):
+                                logger.info(f"Stored API credential check SUCCESS for {username}")
+                                return {"status": True, "actual_username": username}
+                        except Exception as e:
+                            logger.warning(f"Stored API credential check failed for {username}: {e}")
+                            return {"status": False, "reason": f"Public key auth FAILED for {username}"}
         except Exception as e:
             logger.warning(f"Invalid stored SSH key for {username}: {e}")
             continue
-
-
-    record = await db.fetch_one(
-        "SELECT api_key, api_secret FROM users WHERE username = ?",
-        (username,)
-    )
-
-    if record:
-        stored_api_key = record[0]
-        stored_api_secret = record[1]
-
-        if stored_api_key and stored_api_secret:
-            try:
-                stored_api_secret = decrypt(stored_api_secret)
-
-                if await _check_api_key(stored_api_key, stored_api_secret):
-                    logger.info(f"Stored API credential check SUCCESS for {username}")
-                    return {"status": True, "actual_username": username}
-            except Exception as e:
-                logger.warning(f"Stored API credential check failed for {username}: {e}")
 
 
     logger.warning(f"Public key auth FAILED for {username}")
@@ -168,7 +167,7 @@ async def key_auth(username: str, pkey) -> Dict[str, Any]:
 
 
 async def _check_api_key(api_key: str, api_secret: str) -> bool:
-    """Временная заглушка проверки API-ключа."""
+    """проверка API-ключа."""
     if api_secret is None:
         raise TypeError("api_secret is None")
     config = GlobalStore.get().require("config")

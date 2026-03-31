@@ -116,10 +116,11 @@ class Transaction:
         self._db = db
 
     async def __aenter__(self):
-        # Транзакция начинается автоматически (БД в auto-commit?).
-        # Для MySQL/MariaDB нужно отключить autocommit.
-        # Сделаем явное начало транзакции.
-        await self._db.execute("START TRANSACTION")
+        # Для SQLite используем BEGIN TRANSACTION, для MariaDB/MySQL — START TRANSACTION
+        if self._db._db_type == 'sqlite':
+            await self._db.execute("BEGIN TRANSACTION")
+        else:
+            await self._db.execute("START TRANSACTION")
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):

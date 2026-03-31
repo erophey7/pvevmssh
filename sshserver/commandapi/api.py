@@ -7,6 +7,7 @@ from helpers.globals import GlobalStore
 from database.client import Database
 from sshserver.terminal import Terminal
 from sshserver.terminal.pty_handler import PTYHandler
+from helpers.crypto import encrypt, decrypt
 
 from .exceptions import CommandPermissionError, CommandError
 from .parser import CommandParser
@@ -69,8 +70,8 @@ class CommandAPI:
             raise CommandPermissionError(f"Недостаточно прав: {perm}")
 
     # ==================== Вывод ====================
-    async def write(self, data: str | bytes) -> None:
-        await self.terminal.output.write(data)
+    async def write(self, data: str) -> None:
+        await self.terminal.output.output_str(data)
 
     async def writeln(self, text: str = "") -> None:
         await self.write(text + "\n")
@@ -151,3 +152,11 @@ class CommandAPI:
 
     async def execute(self, query: str, params: tuple | list | None = None):
         return await self.db.execute(query, params)
+    
+    # =================== DB crypt =====================
+
+    def db_encrypt(self, prompt: str = "") -> str:
+        return encrypt(prompt)
+
+    def db_decrypt(self, prompt: str = "") -> str:
+        return decrypt(prompt)

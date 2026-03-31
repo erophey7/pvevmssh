@@ -1,5 +1,6 @@
 """
 Command dispatcher with permission inheritance and category support.
+Now uses CommandAPI to provide unified context to commands.
 """
 
 import asyncio
@@ -14,6 +15,7 @@ from helpers.globals import GlobalStore
 from helpers.path import Paths
 from sshserver.session.manager import get_current_session
 from sshserver.permissions import has_permission
+from sshserver.commandapi import CommandAPI, CommandError, CommandPermissionError, CommandArgumentError, CommandAbort
 
 logger = logging.getLogger(__name__)
 
@@ -115,7 +117,7 @@ class CommandDispatcher:
             return ""
 
         cmd_name = parts[0]
-        args = parts[1:]
+        args = tuple(parts[1:])
 
         if cmd_name == "help":
             if args:
@@ -129,18 +131,24 @@ class CommandDispatcher:
         required = cmd_config.get("permissions", [])
         session = get_current_session()
 
-        if session and not has_permission(session, required):
-            return f"Permission denied. Required: {required or 'none'}"
+        # Permission check at command level (inherited)
+        if session and required and not has_permission(session, required):
+            return f"Permission denied. Required: {required}"
 
         try:
             func = cmd_config["func"]
+            # Create CommandAPI instance for this command execution
+            api = CommandAPI(self.username, args)
             if asyncio.iscoroutinefunction(func):
-                return await func(self.username, *args)
+                return await func(api)
             else:
-                return func(self.username, *args)
+                return func(api)
+        except (CommandPermissionError, CommandArgumentError, CommandAbort) as e:
+            # User-friendly exceptions
+            return f"{e}\n"
         except Exception as e:
             logger.exception("Error in command '%s'", cmd_name)
-            return f"Error in command '{cmd_name}': {e}"
+            return f"Error in command '{cmd_name}': {e}\n"
 
     ########## Help Generation ##########
     def _generate_help(self) -> str:
