@@ -52,6 +52,10 @@ class PTYHandler:
 
     async def resize(self, rows: int, cols: int, xpixels: int = 0, ypixels: int = 0):
         """Resize PTY and notify owner process if any."""
+        if not self._attached:
+            with suppress(Exception):
+                await self.terminal.input.on_terminal_resize()
+
         if self.master_fd is None:
             return
 

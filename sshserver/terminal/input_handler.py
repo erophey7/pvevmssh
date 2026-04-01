@@ -65,6 +65,10 @@ class InputHandler:
 
                 if result is not None:
                     return result
+                
+    async def on_terminal_resize(self) -> None:
+        """Invalidate and redraw active line editor on terminal resize."""
+        await self.editor.on_terminal_resize()
 
     ########## Core Parser ##########
     async def _consume_pending(
@@ -117,7 +121,13 @@ class InputHandler:
             await self._handle_escape(seq)
             return None, seq_len
 
-        # UTF-8 character
+        # Попытка bulk-вставки обычного текста (paste optimization)
+        bulk_text, bulk_len = self._try_parse_plain_text_run(pending, encoding)
+        if bulk_len > 0 and bulk_text:
+            await self.editor.feed_text(bulk_text)
+            return None, bulk_len
+
+        # UTF-8 character fallback
         char_len = self._utf8_char_len(b0)
 
         if len(pending) < char_len:
@@ -161,7 +171,7 @@ class InputHandler:
         # Mouse SGR sequences
         if len(pending) > 3 and pending[2] == ord("<"):
             for i in range(3, len(pending)):
-                if pending[i] in (ord('M'), ord('m')):
+                if pending[i] in (ord("M"), ord("m")):
                     return i + 1
             return None
 
@@ -171,6 +181,53 @@ class InputHandler:
                 return i + 1
 
         return None
+
+    def _try_parse_plain_text_run(
+        self, pending: bytearray, encoding: str
+    ) -> tuple[str, int]:
+        """
+        Fast path for paste:
+        parse maximal run of plain printable UTF-8 text until first control/escape/newline.
+
+        Returns:
+            (decoded_text, consumed_bytes)
+        """
+        if not pending:
+            return "", 0
+
+        i = 0
+        n = len(pending)
+
+        while i < n:
+            b0 = pending[i]
+
+            # stop on control chars / escapes / enter / backspace
+            if b0 < 0x20 or b0 in (0x7F, 0x1B):
+                break
+
+            char_len = self._utf8_char_len(b0)
+            if i + char_len > n:
+                break
+
+            raw = bytes(pending[i : i + char_len])
+            try:
+                ch = raw.decode(encoding)
+            except UnicodeDecodeError:
+                break
+
+            # Не тянем в bulk спецсимволы форматирования
+            if ch in ("\r", "\n", "\x08", "\x7f", "\x1b"):
+                break
+
+            i += char_len
+
+        if i == 0:
+            return "", 0
+
+        try:
+            return bytes(pending[:i]).decode(encoding), i
+        except UnicodeDecodeError:
+            return "", 0
 
     async def _handle_escape(self, seq: bytes):
         """Handle standard key escape sequences (arrows, delete, home, etc.)."""

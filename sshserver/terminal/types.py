@@ -1,8 +1,10 @@
 """Types and signals for terminal layer."""
 
+from typing import NewType
 from dataclasses import dataclass, field
 
 # Sentinel for Ctrl+D on empty line
+EOF = NewType("EOF", object)
 EOF = object()
 
 

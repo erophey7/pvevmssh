@@ -98,7 +98,7 @@ class Terminal:
         except Exception:
             cols, rows, pixwidth, pixheight = 80, 24, 0, 0
 
-        logger.info("Terminal resized: %dx%d", cols, rows)
+        logger.debug("Terminal resized: %dx%d", cols, rows)
 
         session = get_current_session()
         if session:
