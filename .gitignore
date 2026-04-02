@@ -4,6 +4,7 @@ __pycache__/
 
 ## venv
 venv/
+venv_dev/
 
 
 ## config & env

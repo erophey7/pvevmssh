@@ -15,6 +15,6 @@ __all__ = [
     "PTYHandler",
     "LineEditor",
     "MouseEvent",
-    "MouseHandler"
+    "MouseHandler",
     "EOF"
 ]
