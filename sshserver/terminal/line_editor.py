@@ -68,7 +68,8 @@ class LineEditor:
 
     async def on_terminal_resize(self) -> None:
         async with self._lock:
-            self._last_layout = None
+            logger.debug("[LineEditor] on_terminal_resize called | term_width=%s",
+                        getattr(self.terminal.session, 'term_width', None))
             await self._redraw_line()
 
     async def feed_char(self, char: str) -> None:
@@ -364,6 +365,9 @@ class LineEditor:
         prompt_segments = self._get_prompt_segments()
         term_width = max(1, self.terminal.session.term_width or 80)
 
+        logger.debug("[BUILD_LAYOUT] term_width=%d | prompt_segments=%d | buffer_graphemes=%d",
+                     term_width, len(prompt_segments), len(self._buffer))
+
         rows: list[list[VisualCell]] = [[]]
         index_to_pos: list[ScreenPos] = []
 
@@ -436,6 +440,11 @@ class LineEditor:
             for visual_row in rows
         )
 
+        logger.debug("[BUILD_LAYOUT] DONE → rows=%d | pending_wrap=%s | cursor=(%d,%d) | end=(%d,%d)",
+                     len(rows), pending_wrap,
+                     row, col,
+                     end_pos.row, end_pos.col)
+
         return Layout(
             rows=rows,
             index_to_pos=index_to_pos,
@@ -487,40 +496,41 @@ class LineEditor:
     async def _redraw_line(self) -> None:
         layout = self._build_layout()
         out = b""
-
-        if self._last_layout is not None:
-            old_rows = self._visible_row_count(self._last_layout)
-
-            if self._last_layout.cursor_pos.row > 0:
-                out += f"\x1b[{self._last_layout.cursor_pos.row}A".encode()
-
-            for i in range(old_rows):
-                out += b"\r\x1b[2K"
-                if i < old_rows - 1:
-                    out += b"\x1b[1B"
-
-            if old_rows > 1:
-                out += f"\x1b[{old_rows - 1}A".encode()
-        else:
-            out += b"\r\x1b[2K"
-
-        out += layout.rendered_text.replace("\n", "\r\n").encode("utf-8", errors="replace")
-
+    
+        logger.debug("[REDRAW] START | last=%s | new_rows=%d | pending=%s | cursor=(%d,%d) | end=(%d,%d)",
+                     "None" if self._last_layout is None else f"rows={len(self._last_layout.rows)} p={self._last_layout.pending_wrap}",
+                     len(layout.rows), layout.pending_wrap,
+                     layout.cursor_pos.row, layout.cursor_pos.col,
+                     layout.end_pos.row, layout.end_pos.col)
+    
+        if self._last_layout is not None and self._last_layout.cursor_pos.row > 0:
+            out += f"\x1b[{self._last_layout.cursor_pos.row}A".encode()
+            logger.debug("[REDRAW] ↑ up %d to block start", self._last_layout.cursor_pos.row)
+    
+        out += b"\r"
+        out += b"\x1b[J"  # ← до рендера, пока курсор в начале блока
+    
+        rendered_bytes = layout.rendered_text.replace("\n", "\r\n").encode("utf-8", errors="replace")
+        out += rendered_bytes
         if layout.pending_wrap:
             out += b"\r\n"
-
-        out += b"\x1b[J"
-
+            logger.debug("[REDRAW] pending_wrap → extra \\r\\n")
+    
+        logger.debug("[REDRAW] printed %d chars", len(layout.rendered_text))
+    
         rows_up = layout.end_pos.row - layout.cursor_pos.row
         if rows_up > 0:
             out += f"\x1b[{rows_up}A".encode()
-
+            logger.debug("[REDRAW] ↑ up %d to cursor", rows_up)
         out += f"\x1b[{layout.cursor_pos.col}G".encode()
-
+        logger.debug("[REDRAW] → column %d", layout.cursor_pos.col)
+    
         self._last_layout = layout
-
+        logger.debug("[REDRAW] END | _last_layout updated")
+    
         if self.echo:
             await self.terminal.output.output_bytes(out)
+            logger.debug("[REDRAW] bytes sent (%d)", len(out))
 
     ########## Prompt ##########
     def _get_prompt(self) -> str:
@@ -532,10 +542,6 @@ class LineEditor:
         return ">>> "
 
     def _get_prompt_segments(self) -> list[PromptSegment]:
-        """
-        Supports Bash-style \[...\] non-printing prompt spans.
-        Also preserves ANSI sequences placed inside such spans.
-        """
         prompt = self._get_prompt()
         parts: list[PromptSegment] = []
 
