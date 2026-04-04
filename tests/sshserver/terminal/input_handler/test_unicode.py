@@ -1,5 +1,5 @@
 import pytest
-from tests.testutils.terminal_fakes import FakeTerminal, push_and_read
+from tests.sshserver.terminal.testutils.fakes import FakeTerminal, push_and_read
 
 
 @pytest.mark.asyncio

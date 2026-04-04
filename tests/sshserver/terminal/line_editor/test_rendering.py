@@ -1,5 +1,6 @@
 import pytest
-from tests.testutils.terminal_fakes import FakeTerminal
+from tests.sshserver.terminal.testutils.fakes import FakeTerminal
+from tests.sshserver.terminal.testutils.line_editor import get_editor_layout
 
 
 @pytest.mark.asyncio
@@ -8,7 +9,7 @@ async def test_render_simple_text(LineEditorFixture):
     ed = LineEditorFixture(term)
 
     await ed.feed_text("hello")
-    layout = ed._build_layout()
+    layout = get_editor_layout(ed)
 
     assert "hello" in layout.rendered_text
 
@@ -19,7 +20,7 @@ async def test_render_wrap(LineEditorFixture):
     ed = LineEditorFixture(term)
 
     await ed.feed_text("1234567890")
-    layout = ed._build_layout()
+    layout = get_editor_layout(ed)
 
     assert len(layout.rows) >= 2
 
@@ -30,6 +31,6 @@ async def test_cursor_position_end(LineEditorFixture):
     ed = LineEditorFixture(term)
 
     await ed.feed_text("abc")
-    layout = ed._build_layout()
+    layout = get_editor_layout(ed)
 
     assert layout.cursor_pos.col >= 1

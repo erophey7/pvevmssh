@@ -1,5 +1,6 @@
 import pytest
-from tests.testutils.terminal_fakes import FakeTerminal
+from tests.sshserver.terminal.testutils.fakes import FakeTerminal
+from tests.sshserver.terminal.testutils.line_editor import get_editor_layout
 
 
 @pytest.mark.asyncio
@@ -8,7 +9,7 @@ async def test_exact_terminal_edge_wrap(LineEditorFixture):
     ed = LineEditorFixture(term)
 
     await ed.feed_text("1234")
-    layout = ed._build_layout()
+    layout = get_editor_layout(ed)
 
     assert layout.pending_wrap is True
 
@@ -19,6 +20,6 @@ async def test_wrap_after_one_more_char(LineEditorFixture):
     ed = LineEditorFixture(term)
 
     await ed.feed_text("12345")
-    layout = ed._build_layout()
+    layout = get_editor_layout(ed)
 
     assert len(layout.rows) >= 2
