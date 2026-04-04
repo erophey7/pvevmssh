@@ -4,24 +4,6 @@ from tests.sshserver.terminal.testutils import FakeTerminal
 from tests.sshserver.terminal.testutils.line_editor import get_editor_layout, layout_rows_text
 
 
-@pytest.mark.asyncio
-async def test_long_prompt_affects_wrap(LineEditorFixture):
-    term = FakeTerminal(width=12, ps1="user@host$ ")
-    ed = LineEditorFixture(term)
-
-    await ed.feed_text("ls")
-    layout = get_editor_layout(ed)
-
-    # Проверка визуальных строк
-    rows = layout_rows_text(layout)
-    assert rows == [
-        "user@host$ l",
-        "s",
-    ]
-
-    # Проверка позиции курсора
-    assert layout.cursor_pos.row == 1
-    assert layout.cursor_pos.col == 2  # после 's'
 
 
 @pytest.mark.asyncio

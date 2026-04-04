@@ -11,7 +11,7 @@ def build_layout(
     buffer: list[str],
     cursor: int,
     term_width: int,
-) -> Layout:
+    ) -> Layout:
     term_width = max(1, term_width or 80)
 
     logger.debug(
@@ -84,9 +84,8 @@ def build_layout(
     else:
         end_pos = ScreenPos(row, col)
 
-    rendered_text = "\n".join(
-        "".join(cell.text for cell in visual_row)
-        for visual_row in rows
+    rendered_text = "".join(
+        cell.text for visual_row in rows for cell in visual_row
     )
 
     logger.debug(

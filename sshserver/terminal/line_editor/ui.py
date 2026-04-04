@@ -68,7 +68,7 @@ async def redraw(editor) -> None:
     out += b"\r"
     out += b"\x1b[J"
 
-    rendered_bytes = layout.rendered_text.replace("\n", "\r\n").encode("utf-8", errors="replace")
+    rendered_bytes = layout.rendered_text.encode("utf-8", errors="replace")
     out += rendered_bytes
 
     if layout.pending_wrap:
