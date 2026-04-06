@@ -35,7 +35,13 @@ class InputHandler:
         await self.terminal.input_queue.put(data)
 
     async def input_str(self, data: str, encoding="utf-8"):
+        if hasattr(self.terminal.editor, "_literal_insert"):
+            self.terminal.editor._literal_insert = True
+
         await self.terminal.input_queue.put(data.encode(encoding))
+
+        if hasattr(self.terminal.editor, "_literal_insert"):
+            self.terminal.editor._literal_insert = False
 
     async def read_bytes(self) -> t.Optional[bytes]:
         return await self.terminal.input_queue.get()
@@ -181,6 +187,12 @@ class InputHandler:
 
         # ANSI escape sequences / Meta keys
         if b0 == 0x1B:
+                # если literal insert, вставляем как текст
+            if getattr(self.editor, "_literal_insert", False):
+                char_len = 1
+                char = bytes([b0]).decode("ascii", errors="ignore")
+                await self.editor.feed_text(char)
+                return None, char_len
             seq_len = self._try_parse_escape(pending)
             if seq_len is None:
                 return None, 0
