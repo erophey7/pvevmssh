@@ -4,6 +4,7 @@ import logging
 
 from .types import SessionInfo
 from .environment import UserEnvironment
+from .history import CommandHistory
 from .manager import SessionStore, current_session
 from sshserver.permissions import get_user_group, resolve_permissions
 from helpers.globals import GlobalStore
@@ -20,7 +21,7 @@ async def create_session(process) -> SessionInfo:
 
     term_type = getattr(process, "term_type", "unknown")
     term_size = getattr(process, "term_size", (80, 24, 0, 0))
-    width, height, _, _ = term_size
+    width, height, pixwidth, pixheight = term_size
 
     session = SessionInfo(
         username=username,
@@ -28,20 +29,27 @@ async def create_session(process) -> SessionInfo:
         term_type=term_type,
         term_width=width,
         term_height=height,
+        term_pixwidth=pixwidth,
+        term_pixheight=pixheight
     )
 
-    env = UserEnvironment()
+    config = GlobalStore.get().require("config")
+
+    env = UserEnvironment(max_size=config.get("db.limits.env", 50), session=session)
+    await env.load()
+    history = CommandHistory(max_size=config.get("db.limits.history", 1000), session=session)
+    await history.load()
     env.set("USER", username)
     env.set("TERM", term_type)
     env.set("PS1", ">>> ")
 
     session.extra["env"] = env
+    session.extra["history"] = history
     session.extra["process"] = process
 
     user_group = get_user_group(username)
     user_permissions = resolve_permissions(user_group)
 
-    config = GlobalStore.get().require("config")
     groups = config.get("groups", {})
     group_info = groups.get(str(user_group), {})
     group_name = group_info.get("name", f"Group_{user_group}")

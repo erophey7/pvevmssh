@@ -32,7 +32,7 @@ async def execute(api: CommandAPI) -> None:
         process_env.setdefault("TERM", "xterm-256color")
 
     # Синхронизируем размер окна
-    await pty.resize(api.rows, api.cols)
+    await pty.resize(api.rows, api.cols, api.pixheight, api.pixwidth)
 
     # Подключаем потоки PTY к SSH
     await pty.attach_streams()

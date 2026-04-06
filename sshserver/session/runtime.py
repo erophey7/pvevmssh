@@ -15,8 +15,15 @@ async def run_session(session, terminal) -> None:
     username = session.username
     dispatcher = CommandDispatcher(username)
 
-    await terminal.output.output_str(f"Welcome to PVE SSH Server, {username}!\r\n")
-    await terminal.output.output_str("Type 'help' for available commands.\r\n")
+    env = session.extra.get("env")
+    if env.get("HELLOMSG", False):
+        hellomsg = env.substitute(env.get("HELLOMSG"))
+        if not hellomsg.endswith(("\n", "\r")):
+            hellomsg += "\r\n"
+        await terminal.output.output_str(hellomsg)
+    else:
+        await terminal.output.output_str(f"Welcome to PVE SSH Server, {username}!\r\n")
+        await terminal.output.output_str("Type 'help' for available commands.\r\n")
 
     while True:
         env = session.extra.get("env")
@@ -25,6 +32,11 @@ async def run_session(session, terminal) -> None:
         await terminal.output.output_str(prompt)
 
         line = await terminal.input.read_str()
+
+        try:
+            line = env.substitute(line)
+        except Exception as e:
+            logger.debug("Substutution error: %s", e)
 
         if line is EOF:
             await terminal.output.output_str("\r\n")

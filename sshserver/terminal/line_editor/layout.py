@@ -14,10 +14,10 @@ def build_layout(
     ) -> Layout:
     term_width = max(1, term_width or 80)
 
-    logger.debug(
-        "[BUILD_LAYOUT] term_width=%d | prompt_segments=%d | buffer_graphemes=%d",
-        term_width, len(prompt_segments), len(buffer)
-    )
+    #logger.debug(
+    #    "[BUILD_LAYOUT] term_width=%d | prompt_segments=%d | buffer_graphemes=%d",
+    #    term_width, len(prompt_segments), len(buffer)
+    #)
 
     rows: list[list[VisualCell]] = [[]]
     index_to_pos: list[ScreenPos] = []
@@ -88,12 +88,12 @@ def build_layout(
         cell.text for visual_row in rows for cell in visual_row
     )
 
-    logger.debug(
-        "[BUILD_LAYOUT] DONE → rows=%d | pending_wrap=%s | cursor=(%d,%d) | end=(%d,%d)",
-        len(rows), pending_wrap,
-        cursor_pos.row, cursor_pos.col,
-        end_pos.row, end_pos.col
-    )
+    #logger.debug(
+    #    "[BUILD_LAYOUT] DONE → rows=%d | pending_wrap=%s | cursor=(%d,%d) | end=(%d,%d)",
+    #    len(rows), pending_wrap,
+    #    cursor_pos.row, cursor_pos.col,
+    #    end_pos.row, end_pos.col
+    #)
 
     return Layout(
         rows=rows,

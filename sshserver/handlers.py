@@ -50,6 +50,10 @@ async def handle_client(process):
             except Exception:
                 pass
     finally:
+        try:
+            await session.extra.get("history").save()
+        except Exception as e:
+            logger.debug("Error during saving history: %s", e)
         # Cleanup
         try:
             if current_session.get() is not None:

@@ -30,7 +30,11 @@ class Config:
             "db": {
                 "type": "sqlite",
                 "file": str(Paths.SQLITE_FILE),
-                "masterkey_file": str(Paths.DB_MASTERKEY_FILE)
+                "masterkey_file": str(Paths.DB_MASTERKEY_FILE),
+                "limits": {
+                    "env": 50,
+                    "history": 2000
+                }
             },
             "auth": {
                 "ssh_key_enabled": True,

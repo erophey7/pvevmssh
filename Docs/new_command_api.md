@@ -207,6 +207,7 @@ api.args            # tuple[str, ...] аргументов команды
 api.session         # текущая SSH-сессия
 api.terminal        # Terminal
 api.env             # UserEnvironment
+api.history         # History
 api.permissions     # set[str]
 api.logger          # logging.Logger
 
@@ -215,6 +216,8 @@ api.pty             # PTYHandler
 api.mouse           # mouse handler
 api.rows            # высота терминала
 api.cols            # ширина терминала
+api.pixheight       # высота терминала (в пикселях)
+api.pixwidth        # ширина терминала (в пикселях)
 api.user            # UserContext (lazy)
 api.config          # объект конфигурации (lazy)
 ```

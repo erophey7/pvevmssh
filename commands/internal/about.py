@@ -28,7 +28,7 @@ async def execute(api: CommandAPI) -> str | None:
             "Session Information:",
             f"  UUID          : {session.uuid}",
             f"  Client IP     : {session.client_addr}",
-            f"  Terminal      : {session.term_type} • {session.term_width}x{session.term_height}",
+            f"  Terminal      : {session.term_type} • {session.term_width}x{session.term_height} ({session.term_pixwidth}x{session.term_pixheight})",
             f"  Started       : {session.start_time:.0f}",
         ])
 

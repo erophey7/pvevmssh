@@ -17,5 +17,7 @@ class SessionInfo:
     term_type: str = ""
     term_width: int = 80
     term_height: int = 24
+    term_pixwidth: int = 640
+    term_pixheight: int = 480
     start_time: float = field(default_factory=time.time)
     extra: Dict[str, Any] = field(default_factory=dict)

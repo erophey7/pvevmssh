@@ -62,9 +62,9 @@ class CommandAPI:
       - Права:        has_permission, has_any_permission, require_permission
       - Вывод:        write, writeln, write_line, write_success, write_error,
                       write_warning, clear, flush
-      - Ввод:         read_line, prompt, confirm
+      - Ввод:         read_line, read_line_secure, prompt, confirm
       - БД:           fetch_one, fetch_all, fetch_val, execute (+ api.db напрямую)
-      - Окружение:    env, env_get, env_set, env_unset, env_substitute
+      - Окружение:    env, env_get, env_set, env_unset, env_substitute, history
       - PTY:          run_interactive, pty
       - Мышь:         mouse, mouse_enable, mouse_disable
       - Экран:        enter_alt_screen, exit_alt_screen
@@ -120,6 +120,16 @@ class CommandAPI:
     def cols(self) -> int:
         """Текущая ширина терминала в символах."""
         return self.session.term_width
+    
+    @property
+    def pixheight(self) -> int:
+        """Текущая высота терминала в пикселях."""
+        return self.session.term_pixheight
+
+    @property
+    def pixwidth(self) -> int:
+        """Текущая ширина терминала в пикселях."""
+        return self.session.term_pixwidth
 
     @property
     def user(self) -> UserContext:
@@ -140,6 +150,11 @@ class CommandAPI:
         if self._config is None:
             self._config = GlobalStore.get().require("config")
         return self._config
+    
+    @property
+    def history(self):
+        """History пользователя"""
+        return self.session.extra.get("history", None)
 
     # =========================================================================
     # Права доступа
