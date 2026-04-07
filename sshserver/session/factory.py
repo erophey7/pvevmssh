@@ -41,7 +41,8 @@ async def create_session(process) -> SessionInfo:
     await history.load()
     env.set("USER", username)
     env.set("TERM", term_type)
-    env.set("PS1", ">>> ")
+    env.set("PS1", env.get("PS1", config.get("env.default_prompt", ">>> ")))
+    env.set("HOSTNAME", config.get("env.hostname", "pvevmssh"))
 
     session.extra["env"] = env
     session.extra["history"] = history

@@ -46,6 +46,10 @@ class Config:
                 "ssl_verity": False,
                 "timeout": 3
             },
+            "env": {
+                "default_prompt": "\e[1;92m>>> \e[0m",
+                "hostname": "pvevmssh"
+                },
             "groups": {
 		        "0": {
 		        	"name": "Administrator",

@@ -13,6 +13,7 @@ class LineEditorCore:
 
         self._buffer: list[str] = []
         self._cursor: int = 0
+        self._prompt_segments: list | None = None
 
         self._last_layout = None
 
@@ -31,6 +32,7 @@ class LineEditorCore:
     def _reset_state(self) -> None:
         self._buffer.clear()
         self._cursor = 0
+        self._prompt_segments = None
         self._last_layout = None
         self._history_draft = None
         self._history_navigation_active = False
@@ -51,3 +53,9 @@ class LineEditorCore:
                     session=session
                     )
             )
+
+#    def _get_prompt_segments(self) -> list:
+#        """Возвращает кэшированные сегменты промпта (вычисляются один раз)."""
+#        if self._prompt_segments is None:
+#            self._prompt_segments = get_prompt_segments(self.terminal)
+#        return self._prompt_segments

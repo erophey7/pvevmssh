@@ -21,3 +21,8 @@ class SessionInfo:
     term_pixheight: int = 480
     start_time: float = field(default_factory=time.time)
     extra: Dict[str, Any] = field(default_factory=dict)
+
+@dataclass
+class PromptSegment:
+    text: str
+    visible: bool

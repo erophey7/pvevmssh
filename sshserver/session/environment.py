@@ -8,6 +8,8 @@ from helpers.globals import GlobalStore
 from .manager import get_current_session
 from .types import SessionInfo
 
+import logging
+logger = logging.getLogger(__name__)
 
 LoadMode = Literal["replace", "merge"]
 ClearStore = Literal["runtime", "db", "all"]
@@ -44,36 +46,32 @@ class UserEnvironment:
 
     def export(self, line: str) -> str:
         """Parse 'VAR=value' line and set variable. Return formatted output."""
-        line = line.strip()
+
         if not line:
             return ""
-    
+
         if '=' not in line:
             key = line
             if key in self._vars:
                 return f"{key}={self._vars[key]}\n"
             else:
                 return f"export: {key}: not set\n"
-    
+
         key, value = line.split('=', 1)
+
         key = key.strip()
-        value = value.strip()
-    
-        if not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', key):
-            return f"export: `{key}`: not a valid identifier\n"
-    
-        quoted = False
-    
-        if value.startswith('"') and value.endswith('"'):
+
+        if len(value) >= 2 and value[0] == '"' and value[-1] == '"':
             value = value[1:-1]
-            quoted = True
-        elif value.startswith("'") and value.endswith("'"):
+            value = self._decode_escapes(value)
+
+        elif len(value) >= 2 and value[0] == "'" and value[-1] == "'":
+            # одинарные кавычки: сохранить буквально
             value = value[1:-1]
-            quoted = True
-    
-        # shell-like escape decode
-        value = self._decode_escapes(value)
-    
+
+        else:
+            value = self._decode_escapes(value)
+
         self._vars[key] = value
         return f"Environment variables set: {key}={value}\n"
 
@@ -157,6 +155,8 @@ class UserEnvironment:
             self._vars.update(data)
         else:
             raise ValueError(f"Unsupported load mode: {mode}")
+
+        logger.debug(f"Loaded env from db {data}")
 
         return 
 

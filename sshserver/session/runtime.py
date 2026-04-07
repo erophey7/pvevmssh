@@ -4,6 +4,7 @@ import logging
 
 from sshserver.dispatcher import CommandDispatcher
 from sshserver.terminal import EOF
+from .prompt import expand_ps1
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +30,7 @@ async def run_session(session, terminal) -> None:
         env = session.extra.get("env")
         prompt = env.get("PS1", ">>> ") if hasattr(env, "get") else ">>> "
 
-        await terminal.output.output_str(prompt)
+        await terminal.output.output_str(expand_ps1(prompt, session, env))
 
         line = await terminal.input.read_str()
 

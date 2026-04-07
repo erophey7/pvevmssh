@@ -3,49 +3,21 @@ import re
 from dataclasses import dataclass
 
 from .layout import build_layout
+from sshserver.session.prompt import get_prompt_segments
+from sshserver.session.types import PromptSegment
 
 logger = logging.getLogger(__name__)
 
-_BASH_PROMPT_NONPRINT_RE = re.compile(r"\\\[(.*?)\\\]", re.DOTALL)
-
-
-@dataclass
-class PromptSegment:
-    text: str
-    visible: bool
-
-
-def get_prompt(terminal) -> str:
-    session = getattr(terminal, "session", None)
-    if session:
-        env = session.extra.get("env", {})
-        return env.get("PS1", ">>> ")
-    return ">>> "
-
-
-def get_prompt_segments(terminal) -> list[PromptSegment]:
-    prompt = get_prompt(terminal)
-    parts: list[PromptSegment] = []
-
-    pos = 0
-    for m in _BASH_PROMPT_NONPRINT_RE.finditer(prompt):
-        if m.start() > pos:
-            parts.append(PromptSegment(prompt[pos:m.start()], True))
-        parts.append(PromptSegment(m.group(1), False))
-        pos = m.end()
-
-    if pos < len(prompt):
-        parts.append(PromptSegment(prompt[pos:], True))
-
-    if not parts:
-        parts.append(PromptSegment(prompt, True))
-
-    return parts
+def cache_prompt_segments(editor) -> list[PromptSegment]:
+    """Кэш — пересчитывается только один раз за строку."""
+    if editor._prompt_segments is None:
+        editor._prompt_segments = get_prompt_segments(editor.terminal)
+    return editor._prompt_segments
 
 
 async def redraw(editor) -> None:
     layout = build_layout(
-        prompt_segments=get_prompt_segments(editor.terminal),
+        prompt_segments=cache_prompt_segments(editor),
         buffer=editor._buffer,
         cursor=editor._cursor,
         term_width=getattr(editor.terminal.session, "term_width", 80),
@@ -53,41 +25,25 @@ async def redraw(editor) -> None:
 
     out = b""
 
-    #logger.debug(
-    #    "[REDRAW] START | last=%s | new_rows=%d | pending=%s | cursor=(%d,%d) | end=(%d,%d)",
-    #    "None" if editor._last_layout is None else f"rows={len(editor._last_layout.rows)} p={editor._last_layout.pending_wrap}",
-    #    len(layout.rows), layout.pending_wrap,
-    #    layout.cursor_pos.row, layout.cursor_pos.col,
-    #    layout.end_pos.row, layout.end_pos.col
-    #)
-
     if editor._last_layout is not None and editor._last_layout.cursor_pos.row > 0:
         out += f"\x1b[{editor._last_layout.cursor_pos.row}A".encode()
-        #logger.debug("[REDRAW] ↑ up %d to block start", editor._last_layout.cursor_pos.row)
 
-    out += b"\r"
-    out += b"\x1b[J"
-
-    rendered_bytes = layout.rendered_text.encode("utf-8", errors="replace")
-    out += rendered_bytes
+    out += b"\r\x1b[J"
+    out += layout.rendered_text.encode("utf-8", errors="replace")
 
     if layout.pending_wrap:
         out += b"\r\n"
-        #logger.debug("[REDRAW] pending_wrap → extra \\r\\n")
 
     rows_up = layout.end_pos.row - layout.cursor_pos.row
     if rows_up > 0:
         out += f"\x1b[{rows_up}A".encode()
-        #logger.debug("[REDRAW] ↑ up %d to cursor", rows_up)
 
     out += f"\x1b[{layout.cursor_pos.col}G".encode()
-    #logger.debug("[REDRAW] → column %d", layout.cursor_pos.col)
 
     editor._last_layout = layout
 
     if editor.echo:
         await editor.terminal.output.output_bytes(out)
-        #logger.debug("[REDRAW] bytes sent (%d)", len(out))
 
 
 async def move_cursor_only_or_redraw(editor) -> None:
@@ -96,7 +52,7 @@ async def move_cursor_only_or_redraw(editor) -> None:
         return
 
     new_layout = build_layout(
-        prompt_segments=get_prompt_segments(editor.terminal),
+        prompt_segments=cache_prompt_segments(editor),
         buffer=editor._buffer,
         cursor=editor._cursor,
         term_width=getattr(editor.terminal.session, "term_width", 80),
@@ -111,7 +67,6 @@ async def move_cursor_only_or_redraw(editor) -> None:
         return
 
     out = b""
-
     old = editor._last_layout.cursor_pos
     new = new_layout.cursor_pos
 
@@ -131,6 +86,6 @@ async def move_cursor_only_or_redraw(editor) -> None:
 
 async def clear_screen_and_redraw(editor) -> None:
     if editor.echo:
-        await editor.terminal.output.output_bytes(b"\x1b[2J\x1b[H")
+        await editor.terminal.output.output_bytes(b"\x1b[2J\x1b[H]")
     editor._last_layout = None
     await redraw(editor)
