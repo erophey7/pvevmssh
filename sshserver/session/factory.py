@@ -48,7 +48,11 @@ async def create_session(process) -> SessionInfo:
     session.extra["history"] = history
     session.extra["process"] = process
 
-    user_group = get_user_group(username)
+    if config.get(f"auth.force_group.{username}", None) is not None:
+        user_group = int(config.get(f"auth.force_group.{username}"))
+        logger.info("Session: user %s, group forced to %d", username, user_group)
+    else:
+        user_group = await get_user_group(username)
     user_permissions = resolve_permissions(user_group)
 
     groups = config.get("groups", {})

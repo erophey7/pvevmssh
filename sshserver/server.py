@@ -37,9 +37,11 @@ class PVESSHServer(asyncssh.SSHServer):
 
         if "@" in username:
             self._auth_mode = "password_only"
+            self._conn.set_extra_info(auth_method="API key")
             logger.debug(f"Auth mode for {username}: password only")
         else:
             self._auth_mode = "publickey_only"
+            self._conn.set_extra_info(auth_method="Public key")
             logger.debug(f"Auth mode for {username}: public key only")
 
         return True
@@ -103,6 +105,7 @@ class PVESSHServer(asyncssh.SSHServer):
             return False
 
         result = await key_auth(username, key)
+        self._conn.set_extra_info(original_login=username)
         return result.get("status", False)
 
     async def validate_password(self, username: str, password: str) -> bool:
@@ -113,8 +116,8 @@ class PVESSHServer(asyncssh.SSHServer):
             return False
 
         result = await password_auth(username, password)
-        # setup valid name
         self._conn._username = result.get("actual_username", username)
+        self._conn.set_extra_info(original_login=username)
         logger.debug(f"settuped username {result.get("actual_username", username)} for connection")
         return result.get("status", False)
 

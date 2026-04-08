@@ -25,6 +25,7 @@ async def handle_client(process):
         terminal = Terminal(process)
         terminal.session = session
         session.extra["terminal"] = terminal
+        session.extra["auth_method"] = process.get_extra_info("auth_method")
 
         # Switch to raw mode to handle input ourselves
         channel = process.channel

@@ -58,4 +58,5 @@ command = {
     "name": "bash",
     "help": "Start an interactive Bash shell (manual PTY setup)",
     "func": execute,
+    "permissions": ["system_permission", "admin_permission"]
 }

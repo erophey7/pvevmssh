@@ -125,6 +125,6 @@ async def execute(api: CommandAPI) -> str | None:
 
 command = {
     "name": "echo",
-    "help": "Display text with variable expansion and backslash escapes (GNU compatible)",
+    "help": "Display text with variable expansion and backslash escapes",
     "func": execute,
 }

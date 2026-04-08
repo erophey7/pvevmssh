@@ -19,7 +19,7 @@ async def execute(api: CommandAPI) -> str | None:
         f"User          : {username}",
         f"Group         : {session.extra.get('group_name', 'Unknown')} (ID: {session.extra.get('group', 0)})",
         f"Listen        : {config.get('ssh.bind', 'unknown')}",
-        f"Auth method   : password (temporary)",
+        f"Auth method   : {session.extra.get('auth_method', None)}",
     ]
 
     if session:

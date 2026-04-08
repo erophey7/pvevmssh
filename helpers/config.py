@@ -19,8 +19,7 @@ class Config:
         self.data = {
             "ssh": {
                 "bind": "0.0.0.0:22222",
-                "host_key": str(Paths.SSH_HOST_KEY),
-                "max_user_sessions": 10
+                "host_key": str(Paths.SSH_HOST_KEY)
             },
             "logger": {
                 "level": "INFO",
@@ -39,7 +38,11 @@ class Config:
             "auth": {
                 "ssh_key_enabled": True,
                 "password_enabled": True,
-                "default_group": "2"
+                "default_group": "2",
+                "force_group": {
+                    "root": 0
+                },
+                "limited_inheritance": True
             },
             "pve": {
                 "main_node_host": "https://example.com:8006",
@@ -53,22 +56,33 @@ class Config:
             "groups": {
 		        "0": {
 		        	"name": "Administrator",
-		        	"permissions": ["admin_permission"],   
+		        	"permissions": [
+                        "admin_permission", 
+                        "db_admin"
+                    ],   
 		        	"permset": [1,2,3]         
 		        },
 		        "1": {
 		        	"name": "Poweruser",
-		        	"permissions": ["poweruser_permission"],
+		        	"permissions": [
+                        "poweruser_permission",
+                        "db_viewer", 
+                        "system_permission"
+                    ],
 		        	"permset": [2]
 		        },
 		        "2": {
 		        	"name": "User",
-		        	"permissions": ["user_permission"],
+		        	"permissions": [
+                        "user_permission"
+                    ],
 		        	"permset": []
 		        },
 		        "3": {
 		        	"name": "Tester",
-		        	"permissions": ["tester_permission"],
+		        	"permissions": [
+                        "tester_permission"
+                    ],
 		        	"permset": [1,2]
 		        }
 
