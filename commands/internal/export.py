@@ -2,30 +2,25 @@
 Set or display environment variables.
 """
 
-from sshserver.commandapi import CommandAPI
+from sshserver.commandapi import CommandAPI, CommandArgumentError
 
 
 async def execute(api: CommandAPI) -> str | None:
+    parser = api.parser("export", description="Set or display environment variables")
+    parser.add_argument("var", nargs="*", help="Variables to export/display")
+
+    try:
+        ns = parser.parse_args(api.args)
+    except CommandArgumentError as e:
+        return f"Argument error: {e}\n"
+
     env = api.env
-    args = api.args
-
-    if not args:
-        if hasattr(env, 'all'):
-            items = env.all().items()
-        elif hasattr(env, '_vars'):
-            items = env._vars.items()
-        else:
-            return "Cannot retrieve environment variables.\n"
-
+    if not ns.var:
+        items = env.all().items() if hasattr(env, 'all') else env._vars.items()
         lines = [f"{k}={v}" for k, v in items]
         return "\n".join(lines) + "\n" if lines else "No variables set.\n"
 
-    results = []
-    for arg in args:
-        result = env.export(arg)
-        if result:
-            results.append(result.rstrip("\n"))
-
+    results = [env.export(v).rstrip("\n") for v in ns.var if env.export(v)]
     return "\n".join(results) + "\n" if results else None
 
 

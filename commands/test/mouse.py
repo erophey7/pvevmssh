@@ -8,53 +8,36 @@ from sshserver.terminal.mouse_handler import MouseEvent
 
 
 async def on_mouse_event(event: MouseEvent):
-    """Обработчик событий мыши. Использует старый способ получения сессии."""
     msg = f"\r\n[Mouse] {event.state} btn={event.button} at ({event.x},{event.y})"
     if event.wheel:
         msg += f" wheel={event.wheel}"
-    session = get_current_session()
+    session = get_current_session()  # оставлено как было
     if session and "terminal" in session.extra:
-        terminal = session.extra["terminal"]
-        await terminal.output.output_str(msg)
+        await session.extra["terminal"].output.output_str(msg)
 
 
 async def execute(api: CommandAPI) -> str | None:
-    mouse = api.mouse
-    args = api.args
+    parser = api.parser("mouse", description="Enable or disable mouse tracking")
+    parser.add_argument("cmd", choices=["on", "off", "status"], help="on | off | status")
+    parser.add_argument("mode", nargs="?", type=int, default=0, help="Mode for 'on' (0,2,3)")
 
-    if not args:
-        return "Usage: mouse on [mode] | mouse off | mouse status"
+    try:
+        ns = parser.parse_args(api.args)
+    except CommandArgumentError as e:
+        return f"Argument error: {e}\n"
 
-    cmd = args[0].lower()
-
-    if cmd == "on":
-        mode = 0
-        if len(args) > 1:
-            try:
-                mode = int(args[1])
-                if mode not in (0, 2, 3):
-                    return "Invalid mode. Use 0, 2, or 3."
-            except ValueError:
-                return "Mode must be a number (0, 2, 3)."
-
-        base_mode = 1000 if mode == 0 else (1002 if mode == 2 else 1003)
-        await api.mouse_enable([base_mode, 1006])
-        mouse.add_listener(on_mouse_event)
-        return f"Mouse tracking ENABLED (mode {mode}, base {base_mode})"
-
-    elif cmd == "off":
+    if ns.cmd == "on":
+        base = 1000 if ns.mode == 0 else (1002 if ns.mode == 2 else 1003)
+        await api.mouse_enable([base, 1006])
+        api.mouse.add_listener(on_mouse_event)
+        return f"Mouse tracking ENABLED (mode {ns.mode})"
+    elif ns.cmd == "off":
         await api.mouse_disable()
-        mouse.remove_listener(on_mouse_event)
+        api.mouse.remove_listener(on_mouse_event)
         return "Mouse tracking DISABLED"
-
-    elif cmd == "status":
-        if mouse.active_modes:
-            return f"Active mouse modes: {sorted(mouse.active_modes)}"
-        else:
-            return "Mouse tracking is OFF"
-
-    else:
-        return "Unknown command. Use on, off, or status."
+    elif ns.cmd == "status":
+        return f"Active mouse modes: {sorted(api.mouse.active_modes)}" if api.mouse.active_modes else "Mouse tracking is OFF"
+    return None
 
 
 command = {

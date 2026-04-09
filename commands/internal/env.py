@@ -1,21 +1,7 @@
 from sshserver.commandapi import CommandAPI, CommandArgumentError
 
-HELP = """ Usage env [OPTIONS] [ARGS]
-
-Manage your enviromnet.
-
-Options:
-  -h, --help            Show this help
-  -f, --flush           Flush env [all, runtime, db]
-  -s, --save            Save env to db
-
-"""
-
 
 def shell_escape(value: str) -> str:
-    """
-    Escape control characters for safe one-line shell-style output.
-    """
     return (
         value
         .replace("\\", "\\\\")
@@ -26,38 +12,30 @@ def shell_escape(value: str) -> str:
 
 
 async def execute(api: CommandAPI) -> str:
-    parser = api.parser("env")
-    parser.add_flag("-h", "--help", help="Show this help")
-    parser.add_option("-f", "--flush", help="Flush env [all, runtime, db]")
-    parser.add_flag("-s", "--save", help="Save env to db")
+    parser = api.parser("env", description="Manage your environment")
+    parser.add_argument("-f", "--flush", help="Flush env [all, runtime, db]")
+    parser.add_argument("-s", "--save", action="store_true", help="Save env to db")
 
     try:
-        ns = parser.parse(api.args)
+        ns = parser.parse_args(api.args)
     except CommandArgumentError as e:
         return f"Argument error: {e}\n"
 
-    if hasattr(ns, "help") and ns.help:
-        return HELP
-
     env = api.env
 
-    if hasattr(ns, "flush") and ns.flush:
-        if ns.flush == "all":
-            await env.clear(store="all")
-            await api.write_success("Flush complete\n")
-        elif ns.flush == "runtime":
-            await env.clear(store="runtime")
-            await api.write_success("Flush complete\n")
-        elif ns.flush == "db":
-            await env.clear(store="db")
-            await api.write_success("Flush complete\n")
+    if ns.flush:
+        store = ns.flush
+        if store not in ("all", "runtime", "db"):
+            await api.write_error("Invalid flush target. Use: all, runtime, db\n")
         else:
-            await api.write_error("Argument error\n")
+            await env.clear(store=store)
+            await api.write_success(f"Flush complete ({store})\n")
+        return ""
 
-    if hasattr(ns, "save") and ns.save:
+    if ns.save:
         await env.save()
-        await api.write_success("Env saved")
-        return
+        await api.write_success("Environment saved\n")
+        return ""
 
     for key in env.all():
         value = env.get(key, "")
@@ -68,6 +46,6 @@ async def execute(api: CommandAPI) -> str:
 
 command = {
     "name": "env",
-    "help": "Manage your Enviromnet",
+    "help": "Manage your environment",
     "func": execute
 }

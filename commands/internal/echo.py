@@ -1,78 +1,41 @@
 r"""
 GNU coreutils echo — полный Linux-совместимый вариант.
-
-Поддерживает:
-  -n              не выводить финальный \n
-  -e              интерпретировать backslash-escapes
-  -E              НЕ интерпретировать escapes (поведение по умолчанию)
-  --help, -h      справка
-  --version       версия
-  \a \b \c \e \f \n \r \t \v \\ \0NNN \xHH
 """
 
-from sshserver.commandapi import CommandAPI
+from sshserver.commandapi import CommandAPI, CommandArgumentError
 
 
 async def execute(api: CommandAPI) -> str | None:
-    args = api.args
+    parser = api.parser("echo", description="Display text with variable expansion and backslash escapes")
+    parser.add_argument("-n", action="store_true", help="do not output the trailing newline")
+    parser.add_argument("-e", action="store_true", help="enable interpretation of backslash escapes")
+    parser.add_argument("-E", action="store_true", help="disable interpretation of backslash escapes (default)")
+    parser.add_argument("text", nargs="*", help="Strings to echo")
 
-    if not args:
-        return ""
+    try:
+        ns = parser.parse_args(api.args)
+    except CommandArgumentError as e:
+        return f"Argument error: {e}\n"
 
-    # ─────────────────────────────────────────────────────────────
-    # Парсинг опций (как в настоящем GNU echo)
-    # ─────────────────────────────────────────────────────────────
-    no_newline = False
-    interpret_escapes = False   # по умолчанию -E
-    i = 0
+    no_newline = ns.n
+    interpret_escapes = ns.e
+    if ns.E and not interpret_escapes:
+        interpret_escapes = False
 
-    while i < len(args):
-        arg = args[i]
-        if arg == "-n":
-            no_newline = True
-        elif arg == "-e":
-            interpret_escapes = True
-        elif arg == "-E":
-            interpret_escapes = False
-        elif arg in ("--help", "-h"):
-            return (
-                "Usage: echo [OPTION]... [STRING]...\n"
-                "  -n             do not output the trailing newline\n"
-                "  -e             enable interpretation of backslash escapes\n"
-                "  -E             disable interpretation of backslash escapes (default)\n"
-                "  --help         display this help and exit\n"
-            )
-        elif arg.startswith("-") and arg != "--":
-            break
-        else:
-            break
-        i += 1
+    output_args = ns.text or []
 
-    output_args = args[i:]
-
-    # ─────────────────────────────────────────────────────────────
-    # Вспомогательные функции
-    # ─────────────────────────────────────────────────────────────
+    
     def expand_vars(text: str) -> str:
         return api.env_substitute(text)
 
     def strip_quotes(s: str) -> str:
-        """Сохраняет пробелы внутри кавычек (как в bash)."""
         if (s.startswith('"') and s.endswith('"')) or (s.startswith("'") and s.endswith("'")):
             return s[1:-1]
         return s
 
-    # Полный набор escape-последовательностей GNU echo (-e)
     escapes = {
-        "a": "\a",      # bell
-        "b": "\b",      # backspace
-        "e": "\x1b",    # escape
-        "f": "\f",      # form feed
-        "n": "\n",
-        "r": "\r",
-        "t": "\t",
-        "v": "\v",
-        "\\": "\\",
+        "a": "\a", "b": "\b", "e": "\x1b", "f": "\f", "n": "\n",
+        "r": "\r", "t": "\t", "v": "\v", "\\": "\\",
     }
 
     result_parts = []
@@ -81,7 +44,6 @@ async def execute(api: CommandAPI) -> str | None:
         arg = expand_vars(arg)
 
         if interpret_escapes:
-            # Обрабатываем все \xHH и \0NNN
             i = 0
             while i < len(arg):
                 if arg[i] == "\\" and i + 1 < len(arg):
@@ -90,33 +52,29 @@ async def execute(api: CommandAPI) -> str | None:
                         result_parts.append(escapes[next_char])
                         i += 2
                         continue
-                    elif next_char == "0" and i + 3 < len(arg):  # \0NNN (octal)
+                    elif next_char == "0" and i + 3 < len(arg):
                         try:
-                            oct_val = int(arg[i+2:i+5], 8)
-                            result_parts.append(chr(oct_val))
+                            result_parts.append(chr(int(arg[i+2:i+5], 8)))
                             i += 5
                             continue
                         except ValueError:
                             pass
-                    elif next_char == "x" and i + 3 < len(arg):   # \xHH (hex)
+                    elif next_char == "x" and i + 3 < len(arg):
                         try:
-                            hex_val = int(arg[i+2:i+4], 16)
-                            result_parts.append(chr(hex_val))
+                            result_parts.append(chr(int(arg[i+2:i+4], 16)))
                             i += 4
                             continue
                         except ValueError:
                             pass
-                    elif next_char == "c":                         # \c — прекратить вывод
-                        return "".join(result_parts)               # и без \n
+                    elif next_char == "c":
+                        return "".join(result_parts)
                 else:
                     result_parts.append(arg[i])
                 i += 1
         else:
-            # -E режим — просто добавляем как есть
             result_parts.append(arg)
 
-    output = "".join(result_parts)   # используем ''.join, а не ' '.join — GNU echo так делает
-
+    output = "".join(result_parts)
     if not no_newline:
         output += "\n"
 

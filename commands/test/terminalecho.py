@@ -2,34 +2,31 @@
 switch terminal echoing
 """
 
-from sshserver.commandapi import CommandAPI
+from sshserver.commandapi import CommandAPI, CommandArgumentError
+
 
 async def execute(api: CommandAPI) -> str | None:
-    args = api.args
-    terminal = api.terminal
+    parser = api.parser("termecho", description="Switch terminal echo")
+    parser.add_argument("state", nargs="?", choices=["on", "off"], help="on or off")
 
+    try:
+        ns = parser.parse_args(api.args)
+    except CommandArgumentError as e:
+        return f"Argument error: {e}\n"
 
-    if not args:
-        match terminal.input.editor.echo:
-            case True:
-                echoing = False
-
-            case False:
-                echoing = True
+    if ns.state:
+        echoing = ns.state == "on"
     else:
-        if args[0].lower() == "on":
-            echoing = True
-        elif args[0].lower() == "off":
-            echoing = False
+        echoing = not api.terminal.input.editor.echo
 
-    terminal.input.editor.echo = echoing
-    api.logger.debug(f"Now terminal echoing is {terminal.input.editor.echo}")
-    return f"Terminal echo switched to {echoing}"
+    api.terminal.input.editor.echo = echoing
+    api.logger.debug(f"Now terminal echoing is {echoing}")
+    return f"Terminal echo switched to {echoing}\n"
 
 
 command = {
     "name": "termecho",
-    "help": "Switchin terminal echo",
+    "help": "Switch terminal echo",
     "func": execute,
-    "permisson": ["tester_perminssion"]
+    "permissions": ["tester_permission"]
 }
