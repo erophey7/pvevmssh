@@ -19,7 +19,12 @@ async def create_session(process) -> SessionInfo:
     username = process.get_extra_info("username")
     client_addr = process.get_extra_info("peername")[0] if process.get_extra_info("peername") else "unknown"
 
+    client_env: dict[str, str] = dict(process.env)
+
     term_type = getattr(process, "term_type", "unknown")
+    colorterm = client_env.get("COLORTERM")
+    term_modes  = getattr(process, "term_modes",  {})
+
     term_size = getattr(process, "term_size", (80, 24, 0, 0))
     width, height, pixwidth, pixheight = term_size
 
@@ -27,6 +32,7 @@ async def create_session(process) -> SessionInfo:
         username=username,
         client_addr=client_addr,
         term_type=term_type,
+        colorterm=colorterm,
         term_width=width,
         term_height=height,
         term_pixwidth=pixwidth,
@@ -41,6 +47,7 @@ async def create_session(process) -> SessionInfo:
     await history.load()
     env.set("USER", username)
     env.set("TERM", term_type)
+    env.set("COLORTERM", colorterm or "truecolor")
     env.set("PS1", env.get("PS1", config.get("env.default_prompt", ">>> ")))
     env.set("HOSTNAME", config.get("env.hostname", "pvevmssh"))
 
@@ -62,9 +69,16 @@ async def create_session(process) -> SessionInfo:
     session.extra["group"] = user_group
     session.extra["group_name"] = group_name
     session.extra["permissions"] = user_permissions
+    session.extra["term_modes"] = term_modes
+    session.extra["client_env"] = client_env
 
     SessionStore().add(session)
     current_session.set(session)
+
+    logger.debug(
+        "Session %s | client_env keys: %s | COLORTERM=%s",
+        session.uuid[:8], list(client_env.keys()), colorterm
+    )
 
     logger.info(
         "Session created: %s | user=%s | group=%s (%s) | permissions=%d",

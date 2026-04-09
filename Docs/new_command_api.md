@@ -24,8 +24,7 @@
   * [6.3. Изменение других пользователей и ручные проверки](#63-изменение-других-пользователей-и-ручные-проверки)
 * [7. Работа с аргументами](#7-работа-с-аргументами)
   * [7.1. Встроенный парсер `api.parser()`](#71-встроенный-парсер-apiparser)
-  * [7.2. Подкоманды](#72-подкоманды)
-  * [7.3. Ручной парсинг (альтернатива)](#73-ручной-парсинг-альтернатива)
+  * [7.2. Ручной парсинг (альтернатива)](#72-ручной-парсинг-альтернатива)
 * [8. Работа с вводом и выводом (IO)](#8-работа-с-вводом-и-выводом-io)
   * [8.1. Возврат значения из команды](#81-возврат-значения-из-команды)
   * [8.2. Методы вывода `CommandAPI`](#82-методы-вывода-commandapi)
@@ -356,64 +355,433 @@ if target_username != api.username and not api.has_permission("admin"):
 
 ## 7.1. Встроенный парсер `api.parser()`
 
-`CommandAPI` предоставляет метод:
+`CommandAPI` предоставляет встроенный argparse-подобный парсер аргументов:
 
 ```python
 parser = api.parser()
 # или
 parser = api.parser("userinfo")
+# или
+parser = api.parser("userinfo", description="Информация о пользователе")
 ```
 
-Этот метод возвращает объект `CommandParser`, который поддерживает:
+Метод `api.parser()` возвращает экземпляр `ArgumentParser`, который предназначен для разбора аргументов команды в стиле Python `argparse`.
 
-* **Флаги** (без значений) — `add_flag`
-* **Опции** (с обязательным значением) — `add_option`
-* **Позиционные аргументы** — `add_positional`
-* **Подкоманды** — `add_subcommand`
-* Короткие и длинные формы (`-v`, `--verbose`)
-* Группировку коротких флагов (`-abc`)
+---
 
-### Пример использования
+### 7.1.1. Что поддерживает парсер
+
+Встроенный `ArgumentParser` поддерживает:
+
+* **Позиционные аргументы**
+* **Флаги** (`store_true`)
+* **Опции со значением**
+* **Короткие и длинные формы** (`-v`, `--verbose`)
+* **Группировку коротких флагов** (`-abc`)
+* **Короткие опции со значением** (`-n5`)
+* **Длинные опции со значением через `=`** (`--count=5`)
+* **Подкоманды**
+* **Автоматический `-h/--help`**
+* **Типизацию значений** (`type=int`)
+* **Проверку допустимых значений** (`choices=[...]`)
+* **Обязательные аргументы** (`required=True`)
+* **Множественные значения** через `nargs`
+
+---
+
+### 7.1.2. Базовый синтаксис
+
+Аргументы добавляются через единый метод `add_argument(...)`.
+
+#### Позиционный аргумент
+
+```python
+parser.add_argument("file", help="Имя файла")
+```
+
+#### Флаг без значения
+
+```python
+parser.add_argument("-v", "--verbose", action="store_true", help="Подробный вывод")
+```
+
+#### Опция со значением
+
+```python
+parser.add_argument("-c", "--count", type=int, default=5, help="Количество записей")
+```
+
+#### Разбор аргументов
+
+```python
+ns = parser.parse_args(api.args)
+```
+
+После этого значения доступны через `Namespace`:
+
+```python
+ns.file
+ns.verbose
+ns.count
+```
+
+---
+
+### 7.1.3. Простой пример
 
 ```python
 async def execute(api: CommandAPI) -> str | None:
-    parser = api.parser("example")
-    parser.add_flag("-v", "--verbose", help="Увеличить детализацию")
-    parser.add_option("-c", "--count", default=5, help="Количество записей")
-    parser.add_positional("file", help="Имя файла")
+    parser = api.parser("example", description="Пример команды")
+    parser.add_argument("file", help="Имя файла")
+    parser.add_argument("-v", "--verbose", action="store_true", help="Подробный вывод")
+    parser.add_argument("-c", "--count", type=int, default=5, help="Количество записей")
 
     try:
-        ns = parser.parse(api.args)
+        ns = parser.parse_args(api.args)
     except CommandArgumentError as e:
         return f"Ошибка: {e}\n"
 
     if ns.verbose:
         await api.writeln(f"Парсер сработал: {ns}")
+
     return f"File={ns.file}, count={ns.count}\n"
 ```
 
-### Парсер и подкоманды
+#### Примеры запуска
 
-```python
-parser = api.parser("vm")
-sub = parser.add_subcommand("create", help="Создать VM")
-sub.add_option("--name", help="Имя VM")
-sub.add_option("--cpus", default=1)
-
-ns = parser.parse(api.args)   # ns.subcommand будет 'create'
+```bash
+example report.txt
+example report.txt -v
+example report.txt --count 10
+example report.txt -v -c 3
 ```
 
 ---
 
-## 7.2. Подкоманды
+### 7.1.4. Флаги
 
-Для сложных команд рекомендуется проектировать **подкоманды**, например:
+Флаги — это аргументы без значения, которые просто включают поведение.
+
+```python
+parser.add_argument("-a", "--all", action="store_true", help="Показать все поля")
+```
+
+#### Пример
+
+```bash
+userinfo --all
+userinfo -a
+```
+
+Если флаг передан, значение будет `True`, иначе — `False`.
+
+```python
+if ns.all:
+    ...
+```
+
+---
+
+### 7.1.5. Опции со значением
+
+Опции используются, когда аргумент должен принимать значение.
+
+```python
+parser.add_argument("--user", help="Целевой пользователь")
+parser.add_argument("-n", "--count", type=int, default=10)
+```
+
+#### Примеры
+
+```bash
+userinfo --user alice
+userinfo -n 5
+userinfo -n5
+userinfo --count=5
+```
+
+---
+
+### 7.1.6. Позиционные аргументы
+
+Позиционные аргументы задаются без `-` и `--`.
+
+```python
+parser.add_argument("target", help="Целевой объект")
+parser.add_argument("action", help="Действие")
+```
+
+#### Пример
+
+```bash
+vm myvm start
+```
+
+Значения будут доступны так:
+
+```python
+ns.target
+ns.action
+```
+
+---
+
+### 7.1.7. Типизация аргументов
+
+Парсер может автоматически преобразовывать значения.
+
+```python
+parser.add_argument("--cpus", type=int, default=1)
+parser.add_argument("--memory", type=int, default=1024)
+```
+
+#### Пример
+
+```bash
+vm create --cpus 4 --memory 4096
+```
+
+Если передать неверное значение:
+
+```bash
+vm create --cpus abc
+```
+
+будет выброшено исключение `CommandArgumentError`.
+
+---
+
+### 7.1.8. Обязательные аргументы
+
+Для опций можно указать обязательность:
+
+```python
+parser.add_argument("--user", required=True, help="Имя пользователя")
+```
+
+#### Пример
+
+```bash
+userinfo --user alice
+```
+
+Если аргумент не передан, парсер вернёт ошибку.
+
+---
+
+### 7.1.9. Ограничение значений через `choices`
+
+Можно ограничить допустимые значения аргумента:
+
+```python
+parser.add_argument("--mode", choices=["fast", "safe"], default="fast")
+```
+
+#### Пример
+
+```bash
+backup --mode fast
+backup --mode safe
+```
+
+Если передать значение вне списка, будет ошибка.
+
+---
+
+### 7.1.10. Несколько значений (`nargs`)
+
+Парсер поддерживает несколько режимов количества значений.
+
+#### Необязательное значение
+
+```python
+parser.add_argument("file", nargs="?")
+```
+
+#### Ноль или больше значений
+
+```python
+parser.add_argument("files", nargs="*")
+```
+
+#### Один или больше значений
+
+```python
+parser.add_argument("files", nargs="+")
+```
+
+#### Пример
+
+```python
+parser.add_argument("files", nargs="+", help="Список файлов")
+```
+
+```bash
+merge a.txt b.txt c.txt
+```
+
+---
+
+### 7.1.11. Повторяемые аргументы
+
+Если аргумент можно указывать несколько раз, удобно использовать `action="append"`:
+
+```python
+parser.add_argument("--tag", action="append", help="Тег")
+```
+
+#### Пример
+
+```bash
+task create --tag urgent --tag work --tag backend
+```
+
+Результат:
+
+```python
+ns.tag == ["urgent", "work", "backend"]
+```
+
+---
+
+### 7.1.12. Счётчик повторений
+
+Для увеличения уровня подробности удобно использовать `action="count"`:
+
+```python
+parser.add_argument("-v", "--verbose", action="count", help="Уровень подробности")
+```
+
+#### Пример
+
+```bash
+cmd -v
+cmd -vv
+cmd -vvv
+```
+
+Результат:
+
+```python
+ns.verbose == 3
+```
+
+---
+
+### 7.1.13. Автоматическая справка (`-h`, `--help`)
+
+Каждый парсер автоматически поддерживает:
+
+```bash
+command -h
+command --help
+```
+
+#### Пример
+
+```python
+parser = api.parser("userinfo", description="Показать информацию о пользователе")
+parser.add_argument("--user", required=True, help="Имя пользователя")
+```
+
+Вызов:
+
+```bash
+userinfo --help
+```
+
+вернёт help-сообщение с usage, списком аргументов и описанием.
+
+---
+
+### 7.1.14. Подкоманды
+
+Для сложных команд рекомендуется использовать **подкоманды**.
+
+Примеры:
 
 * `sshkey add`
 * `sshkey remove`
 * `sshkey list`
+* `vm create`
+* `vm delete`
+* `vm start`
 
-Минимальный ручной паттерн (без парсера):
+#### Создание подкоманд
+
+```python
+parser = api.parser("vm", description="Управление виртуальными машинами")
+subparsers = parser.add_subparsers(dest="command", required=True)
+
+create = subparsers.add_parser("create", help="Создать VM")
+create.add_argument("--name", required=True, help="Имя виртуальной машины")
+create.add_argument("--cpus", type=int, default=1)
+create.add_argument("--memory", type=int, default=1024)
+
+delete = subparsers.add_parser("delete", help="Удалить VM")
+delete.add_argument("--name", required=True, help="Имя виртуальной машины")
+```
+
+#### Разбор
+
+```python
+ns = parser.parse_args(api.args)
+```
+
+#### Пример запуска
+
+```bash
+vm create --name testvm --cpus 2 --memory 2048
+vm delete --name testvm
+```
+
+#### Результат
+
+Для первой команды:
+
+```python
+ns.command == "create"
+ns.name == "testvm"
+ns.cpus == 2
+ns.memory == 2048
+```
+
+---
+
+### 7.1.15. Полный пример с подкомандами
+
+```python
+async def execute(api: CommandAPI) -> str | None:
+    parser = api.parser("vm", description="Управление виртуальными машинами")
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    create = subparsers.add_parser("create", help="Создать VM")
+    create.add_argument("--name", required=True, help="Имя виртуальной машины")
+    create.add_argument("--cpus", type=int, default=1)
+    create.add_argument("--memory", type=int, default=1024)
+
+    delete = subparsers.add_parser("delete", help="Удалить VM")
+    delete.add_argument("--name", required=True, help="Имя виртуальной машины")
+
+    try:
+        ns = parser.parse_args(api.args)
+    except CommandArgumentError as e:
+        return f"Ошибка: {e}\n"
+
+    if ns.command == "create":
+        return f"Создание VM {ns.name}: {ns.cpus} CPU, {ns.memory} MB RAM\n"
+
+    if ns.command == "delete":
+        return f"Удаление VM {ns.name}\n"
+
+    return None
+```
+
+---
+
+### 7.1.16. Ручной разбор подкоманд (без парсера)
+
+Если команда очень простая, подкоманды можно обрабатывать вручную:
 
 ```python
 async def execute(api: CommandAPI) -> str | None:
@@ -432,11 +800,16 @@ async def execute(api: CommandAPI) -> str | None:
         return f"Unknown subcommand: {subcmd}\n"
 ```
 
-Однако предпочтительнее использовать встроенный парсер с подкомандами.
+Однако для большинства команд предпочтительнее использовать встроенный `ArgumentParser`, так как он:
+
+* автоматически валидирует аргументы
+* формирует help/usage
+* поддерживает типы и обязательные поля
+* упрощает расширение команды
 
 ---
 
-## 7.3. Ручной парсинг (альтернатива)
+## 7.2. Ручной парсинг (альтернатива)
 
 Если команда простая или требует полного контроля, допустим и ручной парсинг:
 
@@ -479,8 +852,6 @@ async def execute(api: CommandAPI) -> str | None:
 
     return "OK\n"
 ```
-
-Это предпочтительнее, чем тащить в SSH-команды обычный `argparse`.
 
 ---
 

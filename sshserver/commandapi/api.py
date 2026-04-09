@@ -33,7 +33,7 @@ from .exceptions import (
     CommandAbort,
     CommandRuntimeError,
 )
-from .parser import CommandParser
+from .parser import ArgumentParser
 from .user import UserContext
 
 
@@ -195,19 +195,39 @@ class CommandAPI:
     # Парсер аргументов
     # =========================================================================
 
-    def parser(self, prog: str | None = None) -> CommandParser:
+    def parser(
+        self,
+        prog: str | None = None,
+        *,
+        description: str = "",
+    ) -> ArgumentParser:
         """
-        Возвращает CommandParser для разбора аргументов команды.
-
-        Пример:
-            parser = api.parser("userinfo")
-            parser.add_flag("--all", "-a", help="Показать все поля")
-            parser.add_option("--user", help="Целевой пользователь")
-            ns = parser.parse(api.args)
-            if ns.help:
-                return HELP
+        Создаёт и возвращает argparse-подобный парсер аргументов.
+    
+        По умолчанию имя программы (`prog`) берётся из первого аргумента команды.
+        Если аргументы отсутствуют, используется `"command"`.
+    
+        Args:
+            prog: Отображаемое имя команды в help/usage.
+            description: Краткое описание команды для help-сообщения.
+    
+        Returns:
+            Настроенный экземпляр ArgumentParser.
+    
+        Example:
+            parser = api.parser("userinfo", description="Показать информацию о пользователе")
+            parser.add_argument("-a", "--all", action="store_true", help="Показать все поля")
+            parser.add_argument("--user", required=True, help="Целевой пользователь")
+    
+            ns = parser.parse_args(api.args)
+    
+            if ns.all:
+                ...
         """
-        return CommandParser(prog=prog or self.args[0] if self.args else "command")
+        if prog is None:
+            prog = self.args[0] if self.args else "command"
+    
+        return ArgumentParser(prog=prog, description=description)
 
     # =========================================================================
     # Глобальные сервисы

@@ -15,6 +15,7 @@ class SessionInfo:
     username: str = ""
     client_addr: str = ""
     term_type: str = ""
+    colorterm: str = ""
     term_width: int = 80
     term_height: int = 24
     term_pixwidth: int = 640

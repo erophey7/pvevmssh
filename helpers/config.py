@@ -19,7 +19,9 @@ class Config:
         self.data = {
             "ssh": {
                 "bind": "0.0.0.0:22222",
-                "host_key": str(Paths.SSH_HOST_KEY)
+                "host_key": str(Paths.SSH_HOST_KEY),
+                "liboqs_custom_prefix": False,
+                "liboqs_prefix": str(Paths.LIBOQS_DEFAULT_PREFIX)
             },
             "logger": {
                 "level": "INFO",

@@ -185,6 +185,14 @@ class PTYHandler:
 
         self.set_owner_pid(proc.pid)
 
+        process = self.terminal.process
+        term_size = getattr(process, "term_size", None)
+
+        if term_size:
+            cols, rows, pixwidth, pixheight = term_size
+            with suppress(Exception):
+                _set_winsize(self.master_fd, rows, cols, pixwidth, pixheight)
+
         if attach_streams:
             await self.attach_streams()
 

@@ -17,8 +17,11 @@ def _setup_pty(slave_fd: int):
 
 
 async def execute(api: CommandAPI) -> None:
-    pty = api.pty
     env = api.env
+    terminal = api.terminal
+    pty = terminal.pty
+
+    
 
     await pty.ensure()
     slave_fd = pty.get_slave_fd()
@@ -31,8 +34,16 @@ async def execute(api: CommandAPI) -> None:
     else:
         process_env.setdefault("TERM", "xterm-256color")
 
+    # получаем размеры окна
+    process = terminal.process
+    term_size = getattr(process, "term_size", None)
+    cols, rows, pixwidth, pixheight = term_size
+
     # Синхронизируем размер окна
-    await pty.resize(api.rows, api.cols, api.pixheight, api.pixwidth)
+    if term_size:
+        await pty.resize(rows, cols, pixwidth, pixheight)
+
+    await api.write("\r\n")
 
     # Подключаем потоки PTY к SSH
     await pty.attach_streams()
@@ -48,6 +59,10 @@ async def execute(api: CommandAPI) -> None:
     )
 
     pty.set_owner_pid(proc.pid)
+
+    # Синхронизируем размер окна
+    if term_size:
+        await pty.resize(rows, cols, pixwidth, pixheight)
 
     await proc.wait()
     await pty.detach_streams()

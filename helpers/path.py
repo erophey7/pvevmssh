@@ -17,6 +17,9 @@ class Paths:
     DATA_DIR = BASE_DIR / ".data"
     SSH_DIR = DATA_DIR / "ssh"
     LOG_DIR = DATA_DIR / "logs"
+
+    LIBOQS_DEFAULT_PREFIX =  DATA_DIR / "liboqs"
+
     CONFIG_DIR = DATA_DIR
     SQLITE_DIR = DATA_DIR
     DB_MASTERKEY_DIR = DATA_DIR

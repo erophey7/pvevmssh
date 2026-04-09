@@ -15,7 +15,7 @@ from .exceptions import (
     CommandNotFoundError,
     CommandRuntimeError,
 )
-from .parser import CommandParser
+from .parser import ArgumentParser
 
 __all__ = [
     "CommandAPI",
@@ -25,7 +25,7 @@ __all__ = [
     "CommandAbort",
     "CommandNotFoundError",
     "CommandRuntimeError",
-    "CommandParser",
+    "ArgumentParser",
 ]
 
 __version__ = "3.0.0"

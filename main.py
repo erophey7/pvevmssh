@@ -8,6 +8,7 @@ from datetime import datetime
 from helpers.path import Paths
 from helpers.config import Config
 from helpers.globals import GlobalStore
+from helpers.liboqs import ensure_liboqs
 from database.client import Database
 from sshserver.server import SSHServerRunner
 
@@ -31,36 +32,23 @@ def setup_logging(
             force=True,
         )
 
-async def _init_users_table(db, default_group):
-    """Создаёт таблицу users, если её нет."""
-    default_group = int(default_group or 0)
-    await db.execute(f"""
-        CREATE TABLE IF NOT EXISTS users (
-            username    TEXT PRIMARY KEY,
-            api_key     TEXT,
-            api_secret  TEXT,
-            ssh_keys    TEXT DEFAULT '[]',
-            group_id    INTEGER DEFAULT {default_group},
-            saved_env   TEXT DEFAULT '{{}}',
-            history     TEXT DEFAULT '[]',
-            created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-    await db.commit()
-    logging.info("Database table 'users' initialized")
-
-
 async def main() -> int:
     try:
+        # Paths
         Paths.init()
         Paths.ensure_ssh_host_key()
 
+        # Config
         config = Config()
         setup_logging(level=config.get("logger.level", "DEBUG"), 
                       log_files=config.get("logger.log_files", False), 
                       log_dir=config.get("logger.log_dir", str(Paths.LOG_DIR))
         )
 
+        # liboqs
+        ensure_liboqs(config)
+
+        # DB
         db_config = config.get("db", {})
         db_type = db_config.get("type", "sqlite").lower()
 
@@ -85,6 +73,7 @@ async def main() -> int:
         await _init_users_table(db, config.get("auth.default_group"))
         logging.info(f"Connected to {db_type.upper()} database")
 
+        # GlobalStore
         g = GlobalStore()
         g.set("config", config)
         g.set("db", db)
@@ -110,6 +99,25 @@ async def main() -> int:
             logging.info("Database connection closed")
         except Exception:
             pass
+
+
+async def _init_users_table(db, default_group):
+    """Создаёт таблицу users, если её нет."""
+    default_group = int(default_group or 0)
+    await db.execute(f"""
+        CREATE TABLE IF NOT EXISTS users (
+            username    TEXT PRIMARY KEY,
+            api_key     TEXT,
+            api_secret  TEXT,
+            ssh_keys    TEXT DEFAULT '[]',
+            group_id    INTEGER DEFAULT {default_group},
+            saved_env   TEXT DEFAULT '{{}}',
+            history     TEXT DEFAULT '[]',
+            created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    await db.commit()
+    logging.info("Database table 'users' initialized")
 
 
 if __name__ == "__main__":
