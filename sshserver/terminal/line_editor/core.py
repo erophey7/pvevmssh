@@ -59,9 +59,3 @@ class LineEditorCore:
                     session=session
                     )
             )
-
-#    def _get_prompt_segments(self) -> list:
-#        """Возвращает кэшированные сегменты промпта (вычисляются один раз)."""
-#        if self._prompt_segments is None:
-#            self._prompt_segments = get_prompt_segments(self.terminal)
-#        return self._prompt_segments
