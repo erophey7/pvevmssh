@@ -7,6 +7,8 @@ class VisualCell:
     text: str
     width: int
     buffer_index: int | None
+    style: str = ""
+    highlight: bool = False
 
 
 @dataclass
@@ -21,8 +23,12 @@ class Layout:
     index_to_pos: list[ScreenPos] = field(default_factory=list)
     cursor_pos: ScreenPos = field(default_factory=lambda: ScreenPos(0, 1))
     end_pos: ScreenPos = field(default_factory=lambda: ScreenPos(0, 1))
-    rendered_text: str = ""
+    rendered_ansi: str = ""      # ← было rendered_text
     pending_wrap: bool = False
+    menu_ansi: str = ""
+    menu_height: int = 0
+    menu_start_col: int = 1      # ← для позиционирования меню вправо
+
 
 __all__ = [
     "EOF",

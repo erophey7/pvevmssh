@@ -109,15 +109,24 @@ class LSPAdapter:
 
                 # MULTI
                 common = self._common_prefix(candidates)
-
+                inserted = False
                 if common.startswith(partial) and len(common) > len(partial):
                     to_insert = common[len(partial):]
                     insert = split_graphemes(to_insert)
-
                     buf[c:c] = insert
                     editor._cursor += len(insert)
-
+                    inserted = True
                     await ui.redraw(editor)
+
+
+                if len(candidates) > 1:
+                    editor._completions = candidates[:]
+                    editor._completion_index = 0
+                    editor._awaiting_menu = True
+                    if not inserted:
+                        await ui.redraw(editor)
+
+                return
 
             except asyncio.CancelledError:
                 return

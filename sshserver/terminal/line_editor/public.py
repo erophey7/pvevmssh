@@ -36,6 +36,7 @@ class LineEditor(LineEditorCore):
             self._buffer[self._cursor:self._cursor] = insert
             self._cursor += len(insert)
 
+            self._completions = None
             self._history_navigation_active = False
             await ui.redraw(self)
 
@@ -69,6 +70,7 @@ class LineEditor(LineEditorCore):
                 return
             self._cursor -= 1
             self._buffer.pop(self._cursor)
+            self._completions = None
             self._history_navigation_active = False
             await ui.redraw(self)
 
@@ -77,8 +79,14 @@ class LineEditor(LineEditorCore):
             if self._cursor >= len(self._buffer):
                 return
             self._buffer.pop(self._cursor)
+
+            # Скрываем меню
+            self._completions = None
+            self._awaiting_menu = False
             self._history_navigation_active = False
             await ui.redraw(self)
+
+
 
     async def ctrl_backspace(self) -> None:
         async with self._lock:
@@ -95,6 +103,9 @@ class LineEditor(LineEditorCore):
                     self._cursor -= 1
                     self._buffer.pop(self._cursor)
 
+            # Скрываем меню
+            self._completions = None
+            self._awaiting_menu = False
             self._history_navigation_active = False
             await ui.redraw(self)
 
@@ -111,6 +122,9 @@ class LineEditor(LineEditorCore):
                 while self._cursor < len(self._buffer) and char_class(self._buffer[self._cursor]) == cls:
                     self._buffer.pop(self._cursor)
 
+            # Скрываем меню
+            self._completions = None
+            self._awaiting_menu = False
             self._history_navigation_active = False
             await ui.redraw(self)
 
@@ -120,6 +134,10 @@ class LineEditor(LineEditorCore):
                 return
             del self._buffer[:self._cursor]
             self._cursor = 0
+
+            # Скрываем меню
+            self._completions = None
+            self._awaiting_menu = False
             self._history_navigation_active = False
             await ui.redraw(self)
 
@@ -128,6 +146,10 @@ class LineEditor(LineEditorCore):
             if self._cursor >= len(self._buffer):
                 return
             del self._buffer[self._cursor:]
+
+            # Скрываем меню
+            self._completions = None
+            self._awaiting_menu = False
             self._history_navigation_active = False
             await ui.redraw(self)
 
@@ -144,6 +166,9 @@ class LineEditor(LineEditorCore):
             if self._cursor <= 0:
                 return
             self._cursor -= 1
+            # При перемещении курсора (если меню было открыто) — скрываем его
+            self._completions = None
+            self._awaiting_menu = False
             await ui.move_cursor_only_or_redraw(self)
 
     async def cursor_right(self) -> None:
@@ -151,6 +176,9 @@ class LineEditor(LineEditorCore):
             if self._cursor >= len(self._buffer):
                 return
             self._cursor += 1
+            # При перемещении курсора (если меню было открыто) — скрываем его
+            self._completions = None
+            self._awaiting_menu = False
             await ui.move_cursor_only_or_redraw(self)
 
     async def cursor_word_left(self) -> None:
@@ -166,6 +194,9 @@ class LineEditor(LineEditorCore):
                 while self._cursor > 0 and char_class(self._buffer[self._cursor - 1]) == cls:
                     self._cursor -= 1
 
+            # Скрываем меню
+            self._completions = None
+            self._awaiting_menu = False
             await ui.move_cursor_only_or_redraw(self)
 
     async def cursor_word_right(self) -> None:
@@ -181,6 +212,9 @@ class LineEditor(LineEditorCore):
                 while self._cursor < len(self._buffer) and char_class(self._buffer[self._cursor]) == cls:
                     self._cursor += 1
 
+            # Скрываем меню
+            self._completions = None
+            self._awaiting_menu = False
             await ui.move_cursor_only_or_redraw(self)
 
     async def cursor_home(self) -> None:
@@ -188,6 +222,9 @@ class LineEditor(LineEditorCore):
             if self._cursor == 0:
                 return
             self._cursor = 0
+            # Скрываем меню
+            self._completions = None
+            self._awaiting_menu = False
             await ui.move_cursor_only_or_redraw(self)
 
     async def cursor_end(self) -> None:
@@ -195,6 +232,9 @@ class LineEditor(LineEditorCore):
             if self._cursor == len(self._buffer):
                 return
             self._cursor = len(self._buffer)
+            # Скрываем меню
+            self._completions = None
+            self._awaiting_menu = False
             await ui.move_cursor_only_or_redraw(self)
 
     async def history_up(self) -> None:
@@ -202,6 +242,10 @@ class LineEditor(LineEditorCore):
             if not self._history_navigation_active:
                 self._history_draft = self._buffer.copy()
                 self._history_navigation_active = True
+
+            # Скрываем меню при работе с историей
+            self._completions = None
+            self._awaiting_menu = False
 
             prev = self.history.previous()
             if prev is None:
@@ -215,6 +259,10 @@ class LineEditor(LineEditorCore):
         async with self._lock:
             if not self._history_navigation_active:
                 return
+
+            # Скрываем меню при работе с историей
+            self._completions = None
+            self._awaiting_menu = False
 
             nxt = self.history.next()
 
@@ -237,14 +285,133 @@ class LineEditor(LineEditorCore):
     async def history_search_backward(self) -> None:
         return
 
+    # ==================== TAB + MENU LOGIC ====================
     async def tab_complete(self) -> None:
-        """Только делегирование в адаптер. Вся логика — в lsp_adapter.py."""
+        """Tab при открытом меню = следующий вариант (цикл). Иначе — запрос LSP."""
         async with self._lock:
+            if self._completions and len(self._completions) > 1:
+                self._completion_index = (self._completion_index + 1) % len(self._completions)
+                await ui.redraw(self)
+                return
+
             if not self._lsp_adapter:
                 return
             await self._lsp_adapter.tab_complete(self)
 
+    async def show_completions(self, candidates: list[str]) -> None:
+        async with self._lock:
+            if not candidates or len(candidates) <= 1:
+                self._completions = None
+                await ui.redraw(self)
+                return
+            self._completions = candidates
+            self._completion_index = 0
+            self._history_navigation_active = False
+            await ui.redraw(self)
+
+    # ==================== МЕНЮ НАВИГАЦИЯ (стрелки) ====================
+    def _get_menu_columns(self) -> int:
+        """Пропорциональное количество колонок (используется и в layout.py)."""
+        if not self._completions or len(self._completions) <= 1:
+            return 1
+        term_width = getattr(self.terminal.session, "term_width", 80)
+        max_len = max(len(c) for c in self._completions) + 2
+
+        available_width = term_width
+        if getattr(self, '_last_layout', None) is not None:
+            available_width = term_width - (self._last_layout.menu_start_col - 1)
+
+        return max(1, available_width // max_len)
+
+    async def menu_up(self) -> None:
+        async with self._lock:
+            if not self._completions:
+                return
+            cols = self._get_menu_columns()
+            num = len(self._completions)
+            self._completion_index = (self._completion_index - cols) % num
+            await ui.redraw(self)
+
+    async def menu_down(self) -> None:
+        async with self._lock:
+            if not self._completions:
+                return
+            cols = self._get_menu_columns()
+            num = len(self._completions)
+            self._completion_index = (self._completion_index + cols) % num
+            await ui.redraw(self)
+
+    async def menu_left(self) -> None:
+        async with self._lock:
+            if not self._completions:
+                return
+            num = len(self._completions)
+            self._completion_index = (self._completion_index - 1) % num
+            await ui.redraw(self)
+
+    async def menu_right(self) -> None:
+        async with self._lock:
+            if not self._completions:
+                return
+            num = len(self._completions)
+            self._completion_index = (self._completion_index + 1) % num
+            await ui.redraw(self)
+
+    async def menu_accept(self) -> None:
+        async with self._lock:
+            if not self._completions or self._completion_index is None:
+                return
+
+            selected = self._completions[self._completion_index]
+
+            start = self._cursor
+            while start > 0 and char_class(self._buffer[start - 1]) == "word":
+                start -= 1
+
+            del self._buffer[start:self._cursor]
+            insert = split_graphemes(selected)
+            self._buffer[start:start] = insert
+            self._cursor = start + len(insert)
+
+            self._completions = None
+            self._history_navigation_active = False
+            await ui.redraw(self)
+
+    async def menu_cancel(self) -> None:
+        async with self._lock:
+            self._completions = None
+            self._history_navigation_active = False
+            await ui.redraw(self)
+
     def set_lsp_engine(self, engine) -> None:
         """Подключить LSP engine (вызывается снаружи, например из handle_client)."""
+        if self._lsp_adapter:
+            self._lsp_adapter.set_engine(engine)
+
+    async def arrow_up(self) -> None:
+        if self._completions:
+            await self.menu_up()
+        else:
+            await self.history_up()
+
+    async def arrow_down(self) -> None:
+        if self._completions:
+            await self.menu_down()
+        else:
+            await self.history_down()
+
+    async def arrow_left(self) -> None:
+        if self._completions:
+            await self.menu_left()
+        else:
+            await self.cursor_left()
+
+    async def arrow_right(self) -> None:
+        if self._completions:
+            await self.menu_right()
+        else:
+            await self.cursor_right()
+
+    def set_lsp_engine(self, engine) -> None:
         if self._lsp_adapter:
             self._lsp_adapter.set_engine(engine)

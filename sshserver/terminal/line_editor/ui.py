@@ -9,7 +9,6 @@ from sshserver.session.types import PromptSegment
 logger = logging.getLogger(__name__)
 
 def cache_prompt_segments(editor) -> list[PromptSegment]:
-    """Кэш — пересчитывается только один раз за строку."""
     if editor._prompt_segments is None:
         editor._prompt_segments = get_prompt_segments(editor.terminal)
     return editor._prompt_segments
@@ -21,20 +20,37 @@ async def redraw(editor) -> None:
         buffer=editor._buffer,
         cursor=editor._cursor,
         term_width=getattr(editor.terminal.session, "term_width", 80),
+        completions=getattr(editor, "_completions", None),
+        completion_index=getattr(editor, "_completion_index", None),
     )
 
     out = b""
 
+    # Возвращаемся в начало промпта (учитываем многострочный ввод)
     if editor._last_layout is not None and editor._last_layout.cursor_pos.row > 0:
         out += f"\x1b[{editor._last_layout.cursor_pos.row}A".encode()
 
-    out += b"\r\x1b[J"
-    out += layout.rendered_text.encode("utf-8", errors="replace")
+    out += b"\r\x1b[J"                                      # чистим от начала строки вниз
+    out += layout.rendered_ansi.encode("utf-8", errors="replace")
 
     if layout.pending_wrap:
         out += b"\r\n"
 
-    rows_up = layout.end_pos.row - layout.cursor_pos.row
+    # ==================== МЕНЮ (вниз + вправо) ====================
+    if layout.menu_ansi:
+        out += b"\r\n"
+        lines = layout.menu_ansi.split("\r\n")
+        for i, line in enumerate(lines):
+            if layout.menu_start_col > 1:
+                out += f"\x1b[{layout.menu_start_col}G".encode()
+            out += line.encode("utf-8", errors="replace")
+            if i < len(lines) - 1:
+                out += b"\r\n"
+
+    # Точный возврат курсора (учитываем высоту меню)
+    extra = layout.menu_height if layout.menu_ansi else 0
+    rows_up = layout.end_pos.row - layout.cursor_pos.row + extra
+
     if rows_up > 0:
         out += f"\x1b[{rows_up}A".encode()
 
@@ -56,16 +72,20 @@ async def move_cursor_only_or_redraw(editor) -> None:
         buffer=editor._buffer,
         cursor=editor._cursor,
         term_width=getattr(editor.terminal.session, "term_width", 80),
+        completions=getattr(editor, "_completions", None),
+        completion_index=getattr(editor, "_completion_index", None),
     )
 
     if (
-        new_layout.rendered_text != editor._last_layout.rendered_text
+        new_layout.rendered_ansi != editor._last_layout.rendered_ansi
         or new_layout.pending_wrap != editor._last_layout.pending_wrap
         or len(new_layout.rows) != len(editor._last_layout.rows)
+        or new_layout.menu_ansi != editor._last_layout.menu_ansi
     ):
         await redraw(editor)
         return
 
+    # обычное перемещение курсора без полного перерисовывания
     out = b""
     old = editor._last_layout.cursor_pos
     new = new_layout.cursor_pos
