@@ -311,16 +311,16 @@ class LineEditor(LineEditorCore):
 
     # ==================== МЕНЮ НАВИГАЦИЯ (стрелки) ====================
     def _get_menu_columns(self) -> int:
-        """Пропорциональное количество колонок (используется и в layout.py)."""
+        """Пропорциональное количество колонок.
+        Теперь полностью совпадает с логикой layout.py (+3 и menu_start_col=1)."""
         if not self._completions or len(self._completions) <= 1:
             return 1
+
         term_width = getattr(self.terminal.session, "term_width", 80)
-        max_len = max(len(c) for c in self._completions) + 2
+        max_len = max(len(c) for c in self._completions) + 3      # точно как в layout.py
 
+        # меню всегда прижато к левому краю (col=1)
         available_width = term_width
-        if getattr(self, '_last_layout', None) is not None:
-            available_width = term_width - (self._last_layout.menu_start_col - 1)
-
         return max(1, available_width // max_len)
 
     async def menu_up(self) -> None:

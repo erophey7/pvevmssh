@@ -13,10 +13,12 @@ def build_layout(
     buffer: list[str],
     cursor: int,
     term_width: int,
+    term_height: int,
     completions: list[str] | None = None,
     completion_index: int | None = None,
 ) -> Layout:
     term_width = max(1, term_width or 80)
+    term_height = max(24, term_height or 24)
 
     rows: list[list[VisualCell]] = [[]]
     index_to_pos: list[ScreenPos] = []
@@ -83,13 +85,19 @@ def build_layout(
     # ==================== МЕНЮ ====================
     menu_ansi = ""
     menu_height = 0
-    menu_start_col = cursor_pos.col
+    menu_start_col = 1
 
     if completions and completion_index is not None and len(completions) > 1:
-        max_len = max(len(cand) for cand in completions) + 2
+        max_len = max(len(cand) for cand in completions) + 3
         available_width = term_width - (menu_start_col - 1)
         num_cols = max(1, available_width // max_len)
-        num_rows = (len(completions) + num_cols - 1) // num_cols
+
+        # ограничение высоты меню
+        input_rows = end_pos.row + 1
+        max_menu_rows = max(1, term_height - input_rows - 1)
+
+        num_rows_calc = (len(completions) + num_cols - 1) // num_cols
+        num_rows = min(num_rows_calc, max_menu_rows)
 
         menu_lines = []
         for r in range(num_rows):
@@ -104,7 +112,7 @@ def build_layout(
                     line_parts.append(f"{style}{padded}{StyleConfig.RESET}")
                 else:
                     line_parts.append(" " * (max_len - 2))
-            menu_lines.append("".join(line_parts))         
+            menu_lines.append("".join(line_parts))
         menu_ansi = "\r\n".join(menu_lines)
         menu_height = len(menu_lines)
 

@@ -20,6 +20,7 @@ async def redraw(editor) -> None:
         buffer=editor._buffer,
         cursor=editor._cursor,
         term_width=getattr(editor.terminal.session, "term_width", 80),
+        term_height=getattr(editor.terminal.session, "term_height", 24),
         completions=getattr(editor, "_completions", None),
         completion_index=getattr(editor, "_completion_index", None),
     )
@@ -36,7 +37,7 @@ async def redraw(editor) -> None:
     if layout.pending_wrap:
         out += b"\r\n"
 
-    # ==================== МЕНЮ (вниз + вправо) ====================
+    # ==================== МЕНЮ (всегда слева, col=1) ====================
     if layout.menu_ansi:
         out += b"\r\n"
         lines = layout.menu_ansi.split("\r\n")
@@ -47,7 +48,6 @@ async def redraw(editor) -> None:
             if i < len(lines) - 1:
                 out += b"\r\n"
 
-    # Точный возврат курсора (учитываем высоту меню)
     extra = layout.menu_height if layout.menu_ansi else 0
     rows_up = layout.end_pos.row - layout.cursor_pos.row + extra
 
@@ -72,6 +72,7 @@ async def move_cursor_only_or_redraw(editor) -> None:
         buffer=editor._buffer,
         cursor=editor._cursor,
         term_width=getattr(editor.terminal.session, "term_width", 80),
+        term_height=getattr(editor.terminal.session, "term_height", 24),
         completions=getattr(editor, "_completions", None),
         completion_index=getattr(editor, "_completion_index", None),
     )
@@ -85,7 +86,6 @@ async def move_cursor_only_or_redraw(editor) -> None:
         await redraw(editor)
         return
 
-    # обычное перемещение курсора без полного перерисовывания
     out = b""
     old = editor._last_layout.cursor_pos
     new = new_layout.cursor_pos
