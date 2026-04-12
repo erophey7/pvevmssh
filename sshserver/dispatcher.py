@@ -4,6 +4,7 @@ Now uses CommandAPI to provide unified context to commands.
 """
 
 import asyncio
+import inspect
 import importlib
 import pkgutil
 import logging
@@ -139,7 +140,7 @@ class CommandDispatcher:
             func = cmd_config["func"]
             # Create CommandAPI instance for this command execution
             api = CommandAPI(self.username, args)
-            if asyncio.iscoroutinefunction(func):
+            if inspect.iscoroutinefunction(func):
                 return await func(api)
             else:
                 return func(api)

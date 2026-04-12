@@ -8,6 +8,9 @@ from sshserver.terminal.base import Terminal
 from sshserver.session.runtime import run_session
 from sshserver.session.manager import SessionStore, current_session
 
+from sshserver.lsp_engine import LSPEngine
+from sshserver.session.shell_lsp import ShellLSP
+
 logger = logging.getLogger(__name__)
 
 
@@ -23,9 +26,18 @@ async def handle_client(process):
         session = await create_session(process)
 
         terminal = Terminal(process)
+
+        lsp_engine = LSPEngine()
+        lsp_engine.add_client("shell", ShellLSP())
+        lsp_engine.setup_default("shell")
+        terminal.input.editor.set_lsp_engine(lsp_engine)
+
         terminal.session = session
         session.extra["terminal"] = terminal
+        session.extra["lsp_engine"] = lsp_engine
         session.extra["auth_method"] = process.get_extra_info("auth_method")
+
+
 
         # Switch to raw mode to handle input ourselves
         channel = process.channel

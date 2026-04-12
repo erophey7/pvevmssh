@@ -1,8 +1,11 @@
 import asyncio
 import logging
 
+
 from sshserver.session import CommandHistory, get_current_session
 from helpers.globals import GlobalStore
+
+from .lsp_adapter import LSPAdapter
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +29,9 @@ class LineEditorCore:
         self._lock = asyncio.Lock()
 
         self._quoted_insert: bool = False
+
+
+        self._lsp_adapter = LSPAdapter()
 
         self.ensure()
 

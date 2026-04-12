@@ -5,6 +5,9 @@ from .text_utils import split_graphemes, char_class
 from .types import EOF
 from . import ui
 
+if t.TYPE_CHECKING:
+    from ...lsp_engine import LSPEngine
+
 
 class LineEditor(LineEditorCore):
     async def reset(self) -> None:
@@ -235,4 +238,13 @@ class LineEditor(LineEditorCore):
         return
 
     async def tab_complete(self) -> None:
-        return
+        """Только делегирование в адаптер. Вся логика — в lsp_adapter.py."""
+        async with self._lock:
+            if not self._lsp_adapter:
+                return
+            await self._lsp_adapter.tab_complete(self)
+
+    def set_lsp_engine(self, engine) -> None:
+        """Подключить LSP engine (вызывается снаружи, например из handle_client)."""
+        if self._lsp_adapter:
+            self._lsp_adapter.set_engine(engine)
