@@ -9,6 +9,7 @@ if t.TYPE_CHECKING:
     from ...lsp_engine import LSPEngine
 
 
+
 class LineEditor(LineEditorCore):
     async def reset(self) -> None:
         async with self._lock:
@@ -37,6 +38,8 @@ class LineEditor(LineEditorCore):
             self._cursor += len(insert)
 
             self._completions = None
+            self._inline_hint = None
+            self._lsp_adapter.schedule_inline_hint(self)
             self._history_navigation_active = False
             await ui.redraw(self)
 
@@ -71,6 +74,8 @@ class LineEditor(LineEditorCore):
             self._cursor -= 1
             self._buffer.pop(self._cursor)
             self._completions = None
+            self._inline_hint = None
+            self._lsp_adapter.schedule_inline_hint(self)
             self._history_navigation_active = False
             await ui.redraw(self)
 
@@ -82,11 +87,11 @@ class LineEditor(LineEditorCore):
 
             # Скрываем меню
             self._completions = None
+            self._inline_hint = None
+            self._lsp_adapter.schedule_inline_hint(self)
             self._awaiting_menu = False
             self._history_navigation_active = False
             await ui.redraw(self)
-
-
 
     async def ctrl_backspace(self) -> None:
         async with self._lock:
@@ -105,6 +110,7 @@ class LineEditor(LineEditorCore):
 
             # Скрываем меню
             self._completions = None
+            self._inline_hint = None
             self._awaiting_menu = False
             self._history_navigation_active = False
             await ui.redraw(self)
@@ -124,6 +130,7 @@ class LineEditor(LineEditorCore):
 
             # Скрываем меню
             self._completions = None
+            self._inline_hint = None
             self._awaiting_menu = False
             self._history_navigation_active = False
             await ui.redraw(self)
@@ -137,6 +144,7 @@ class LineEditor(LineEditorCore):
 
             # Скрываем меню
             self._completions = None
+            self._inline_hint = None
             self._awaiting_menu = False
             self._history_navigation_active = False
             await ui.redraw(self)
@@ -149,6 +157,7 @@ class LineEditor(LineEditorCore):
 
             # Скрываем меню
             self._completions = None
+            self._inline_hint = None
             self._awaiting_menu = False
             self._history_navigation_active = False
             await ui.redraw(self)
@@ -166,8 +175,8 @@ class LineEditor(LineEditorCore):
             if self._cursor <= 0:
                 return
             self._cursor -= 1
-            # При перемещении курсора (если меню было открыто) — скрываем его
             self._completions = None
+            self._inline_hint = None
             self._awaiting_menu = False
             await ui.move_cursor_only_or_redraw(self)
 
@@ -176,8 +185,8 @@ class LineEditor(LineEditorCore):
             if self._cursor >= len(self._buffer):
                 return
             self._cursor += 1
-            # При перемещении курсора (если меню было открыто) — скрываем его
             self._completions = None
+            self._inline_hint = None
             self._awaiting_menu = False
             await ui.move_cursor_only_or_redraw(self)
 
@@ -196,6 +205,7 @@ class LineEditor(LineEditorCore):
 
             # Скрываем меню
             self._completions = None
+            self._inline_hint = None
             self._awaiting_menu = False
             await ui.move_cursor_only_or_redraw(self)
 
@@ -214,6 +224,7 @@ class LineEditor(LineEditorCore):
 
             # Скрываем меню
             self._completions = None
+            self._inline_hint = None
             self._awaiting_menu = False
             await ui.move_cursor_only_or_redraw(self)
 
@@ -224,6 +235,7 @@ class LineEditor(LineEditorCore):
             self._cursor = 0
             # Скрываем меню
             self._completions = None
+            self._inline_hint = None
             self._awaiting_menu = False
             await ui.move_cursor_only_or_redraw(self)
 
@@ -234,6 +246,7 @@ class LineEditor(LineEditorCore):
             self._cursor = len(self._buffer)
             # Скрываем меню
             self._completions = None
+            self._inline_hint = None
             self._awaiting_menu = False
             await ui.move_cursor_only_or_redraw(self)
 
@@ -245,6 +258,7 @@ class LineEditor(LineEditorCore):
 
             # Скрываем меню при работе с историей
             self._completions = None
+            self._inline_hint = None
             self._awaiting_menu = False
 
             prev = self.history.previous()
@@ -262,6 +276,7 @@ class LineEditor(LineEditorCore):
 
             # Скрываем меню при работе с историей
             self._completions = None
+            self._inline_hint = None
             self._awaiting_menu = False
 
             nxt = self.history.next()
@@ -287,7 +302,7 @@ class LineEditor(LineEditorCore):
 
     # ==================== TAB + MENU LOGIC ====================
     async def tab_complete(self) -> None:
-        """Tab при открытом меню = следующий вариант (цикл). Иначе — запрос LSP."""
+        """Tab при открытом меню = следующий вариант. Иначе — запрос LSP."""
         async with self._lock:
             if self._completions and len(self._completions) > 1:
                 self._completion_index = (self._completion_index + 1) % len(self._completions)
@@ -298,10 +313,24 @@ class LineEditor(LineEditorCore):
                 return
             await self._lsp_adapter.tab_complete(self)
 
+    async def accept_inline_hint(self) -> None:
+        """Принимаем ghost-подсказку (вызывается стрелкой →)"""
+        async with self._lock:
+            if not self._inline_hint:
+                return
+            insert = split_graphemes(self._inline_hint)
+            self._buffer[self._cursor:self._cursor] = insert
+            self._cursor += len(insert)
+            self._inline_hint = None
+            self._completions = None
+            self._history_navigation_active = False
+            await ui.redraw(self)
+
     async def show_completions(self, candidates: list[str]) -> None:
         async with self._lock:
             if not candidates or len(candidates) <= 1:
                 self._completions = None
+                self._inline_hint = None
                 await ui.redraw(self)
                 return
             self._completions = candidates
@@ -374,12 +403,14 @@ class LineEditor(LineEditorCore):
             self._cursor = start + len(insert)
 
             self._completions = None
+            self._inline_hint = None
             self._history_navigation_active = False
             await ui.redraw(self)
 
     async def menu_cancel(self) -> None:
         async with self._lock:
             self._completions = None
+            self._inline_hint = None
             self._history_navigation_active = False
             await ui.redraw(self)
 
@@ -409,6 +440,8 @@ class LineEditor(LineEditorCore):
     async def arrow_right(self) -> None:
         if self._completions:
             await self.menu_right()
+        elif self._inline_hint and self._cursor == len(self._buffer):
+            await self.accept_inline_hint()
         else:
             await self.cursor_right()
 

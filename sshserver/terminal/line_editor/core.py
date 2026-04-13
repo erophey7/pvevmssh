@@ -31,10 +31,13 @@ class LineEditorCore:
         self._quoted_insert: bool = False
 
         self._lsp_adapter = LSPAdapter()
+        self.style_ctx = None
 
         self._completions: list[str] | None = None
         self._completion_index: int = 0
         self._awaiting_menu: bool = False
+
+        self._inline_hint: str | None = None
 
         self.ensure()
 
@@ -49,6 +52,7 @@ class LineEditorCore:
         self._completions = None
         self._completion_index = 0
         self._awaiting_menu = False
+        self._inline_hint = None
         self.history.reset_index()
 
     def current_line(self) -> str:

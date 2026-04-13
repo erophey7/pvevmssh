@@ -23,21 +23,21 @@ async def redraw(editor) -> None:
         term_height=getattr(editor.terminal.session, "term_height", 24),
         completions=getattr(editor, "_completions", None),
         completion_index=getattr(editor, "_completion_index", None),
+        inline_hint=getattr(editor, "_inline_hint", None),
+        style_ctx=getattr(editor, "style_ctx", None),
     )
 
     out = b""
 
-    # Возвращаемся в начало промпта (учитываем многострочный ввод)
     if editor._last_layout is not None and editor._last_layout.cursor_pos.row > 0:
         out += f"\x1b[{editor._last_layout.cursor_pos.row}A".encode()
 
-    out += b"\r\x1b[J"                                      # чистим от начала строки вниз
+    out += b"\r\x1b[J"
     out += layout.rendered_ansi.encode("utf-8", errors="replace")
 
     if layout.pending_wrap:
         out += b"\r\n"
 
-    # ==================== МЕНЮ (всегда слева, col=1) ====================
     if layout.menu_ansi:
         out += b"\r\n"
         lines = layout.menu_ansi.split("\r\n")
@@ -75,6 +75,8 @@ async def move_cursor_only_or_redraw(editor) -> None:
         term_height=getattr(editor.terminal.session, "term_height", 24),
         completions=getattr(editor, "_completions", None),
         completion_index=getattr(editor, "_completion_index", None),
+        inline_hint=getattr(editor, "_inline_hint", None),   # ← ghost
+        style_ctx=getattr(editor, "style_ctx", None),
     )
 
     if (

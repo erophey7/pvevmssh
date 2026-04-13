@@ -6,6 +6,7 @@ from .types import SessionInfo
 from .environment import UserEnvironment
 from .history import CommandHistory
 from .manager import SessionStore, current_session
+from .syntax_highlight import StyleContext
 from sshserver.permissions import get_user_group, resolve_permissions
 from helpers.globals import GlobalStore
 
@@ -54,6 +55,10 @@ async def create_session(process) -> SessionInfo:
     session.extra["env"] = env
     session.extra["history"] = history
     session.extra["process"] = process
+
+    style = StyleContext(session)
+    session.extra["style"] = style
+
 
     if config.get(f"auth.force_group.{username}", None) is not None:
         user_group = int(config.get(f"auth.force_group.{username}"))

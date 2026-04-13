@@ -31,6 +31,7 @@ async def handle_client(process):
         lsp_engine.add_client("shell", ShellLSP())
         lsp_engine.setup_default("shell")
         terminal.input.editor.set_lsp_engine(lsp_engine)
+        terminal.input.editor.style_ctx = session.extra["style"]
 
         terminal.session = session
         session.extra["terminal"] = terminal

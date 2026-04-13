@@ -21,6 +21,7 @@ async def execute(api: CommandAPI) -> str | None:
         return "\n".join(lines) + "\n" if lines else "No variables set.\n"
 
     results = [env.export(v).rstrip("\n") for v in ns.var if env.export(v)]
+    api.session.extra["style"].reload()
     return "\n".join(results) + "\n" if results else None
 
 

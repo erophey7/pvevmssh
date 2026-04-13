@@ -1,9 +1,13 @@
-# sshserver/terminal/line_editor/layout.py
+# layout.py
 import logging
+import typing as t
 
-from .text_utils import split_graphemes, char_width
+from .text_utils import split_graphemes, char_width, get_style, highlight_buffer
 from .types import Layout, VisualCell, ScreenPos
-from sshserver.session.syntax_highlight import get_style, StyleConfig
+from sshserver.session.syntax_highlight import (
+    StyleConfig,
+    StyleContext
+)
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +20,8 @@ def build_layout(
     term_height: int,
     completions: list[str] | None = None,
     completion_index: int | None = None,
+    inline_hint: str | None = None,
+    style_ctx: StyleContext = None,
 ) -> Layout:
     term_width = max(1, term_width or 80)
     term_height = max(24, term_height or 24)
@@ -54,9 +60,10 @@ def build_layout(
         else:
             rows[row].append(VisualCell(seg.text, 0, None))
 
-    # BUFFER
-    for i, g in enumerate(buffer):
-        push_cell(g, char_width(g), i)
+    # BUFFER + SYNTAX HIGHLIGHT
+    styled_buffer = highlight_buffer(buffer, style_ctx)
+    for i, (g, style) in enumerate(styled_buffer):
+        push_cell(g, char_width(g), i, style=style)
 
     pending_wrap = (col == term_width + 1)
 
@@ -65,7 +72,14 @@ def build_layout(
     else:
         cursor_pos = index_to_pos[cursor]
 
-    end_pos = ScreenPos(row + 1 if pending_wrap else row, 1 if pending_wrap else col)
+    # === INLINE HINT (ghost text) — только если курсор в конце ===
+    if inline_hint and cursor == len(buffer):
+        hint_style = style_ctx.get("INLINE_HINT")
+        for g in split_graphemes(inline_hint):
+            push_cell(g, char_width(g), None, style=hint_style)
+
+    end_pos = ScreenPos(row + 1 if (col == term_width + 1) else row,
+                        1 if (col == term_width + 1) else col)
 
     # ANSI для строки ввода
     input_ansi = ""
@@ -92,7 +106,6 @@ def build_layout(
         available_width = term_width - (menu_start_col - 1)
         num_cols = max(1, available_width // max_len)
 
-        # ограничение высоты меню
         input_rows = end_pos.row + 1
         max_menu_rows = max(1, term_height - input_rows - 1)
 
@@ -107,7 +120,7 @@ def build_layout(
                 if idx < len(completions):
                     cand = completions[idx]
                     is_selected = idx == completion_index
-                    style = get_style("completion_selected" if is_selected else "completion")
+                    style = get_style(style_ctx, "COMPLETION_SELECTED" if is_selected else "COMPLETION")
                     padded = cand.ljust(max_len - 2)
                     line_parts.append(f"{style}{padded}{StyleConfig.RESET}")
                 else:
