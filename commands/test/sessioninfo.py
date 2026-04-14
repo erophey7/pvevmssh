@@ -7,14 +7,14 @@ def safe_serialize(obj):
         return json.dumps(obj, ensure_ascii=False, indent=2)
     except TypeError:
         return str(obj)
-
-async def execute(api: CommandAPI) -> None:
-    parser = api.parser("sessioninfo")
     
+def build_parser(parser):
+    parser.description=command["help"]
     parser.add_argument("-a", "--all", action="store_true", help="show all")
     parser.add_argument("params", nargs="*", help="shown list")
-    
 
+async def execute(api: CommandAPI) -> None:
+    parser = api.parser("sessioninfo", description=command["help"])
     parsed_args = parser.parse_args(api.args)
 
     session = api.session
@@ -55,4 +55,5 @@ command = {
     "name": "sessioninfo",
     "help": "list of session params",
     "func": execute,
+    "build_parser": build_parser
 }

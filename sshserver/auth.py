@@ -4,7 +4,6 @@ import json
 import asyncssh
 
 from helpers.globals import GlobalStore
-from helpers.path import Paths
 from helpers.crypto import encrypt, decrypt
 
 from pveapi import is_proxmox_token_valid

@@ -10,6 +10,7 @@ from sshserver.session.manager import SessionStore, current_session
 
 from sshserver.lsp_engine import LSPEngine
 from sshserver.session.shell_lsp import ShellLSP
+from helpers.lsp.incode_connector import InCodeLSPConnector
 
 logger = logging.getLogger(__name__)
 
@@ -28,17 +29,15 @@ async def handle_client(process):
         terminal = Terminal(process)
 
         lsp_engine = LSPEngine()
-        lsp_engine.add_client("shell", ShellLSP())
+        lsp_engine.add_client("shell", ShellLSP(session.dispatcher))
         lsp_engine.setup_default("shell")
-        terminal.input.editor.set_lsp_engine(lsp_engine)
+        connector = InCodeLSPConnector(lsp_engine)
+        terminal.input.editor.set_lsp_engine(connector)
         terminal.input.editor.style_ctx = session.extra["style"]
 
         terminal.session = session
         session.extra["terminal"] = terminal
         session.extra["lsp_engine"] = lsp_engine
-        session.extra["auth_method"] = process.get_extra_info("auth_method")
-
-
 
         # Switch to raw mode to handle input ourselves
         channel = process.channel

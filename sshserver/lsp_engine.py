@@ -44,16 +44,15 @@ class TrieNode:
 class LSPEngine:
     def __init__(self):
         self._command_trie = TrieNode()
-        self._arg_tries: dict[str, TrieNode] = defaultdict(TrieNode)
+        self._arg_tries = defaultdict(TrieNode)
         self._global_words: set[str] = set()
 
-        self._dynamic_providers: list[
-            t.Callable[[str, list[str]], t.Awaitable[list[str]] | list[str]
-        ]] = []
+        self._dynamic_providers: list[t.Callable] = []
 
         self._clients: dict[str, t.Any] = {}
         self._default_client: str | None = None
         self._active_clients: set[str] = set()
+
 
     # ======================================================
     # utils
@@ -134,65 +133,94 @@ class LSPEngine:
     # completion core (ASYNC)
     # ======================================================
 
-    async def get_completions(
-        self,
-        partial: str,
-        previous_tokens: list[str] | None = None
-    ) -> list[str]:
-
+    async def get_completions(self, partial: str, previous_tokens: list[str] | None = None):
         if previous_tokens is None:
             previous_tokens = []
 
-        candidates: list[str] = []
+        candidates = []
 
-        # --------------------------------------------------
-        # 1. dynamic providers
-        # --------------------------------------------------
         for provider in self._dynamic_providers:
             try:
                 res = await self._maybe_await(provider, partial, previous_tokens)
                 if res:
                     candidates.extend(res)
             except Exception:
-                logger.exception("dynamic provider failed")
+                pass
 
-        # --------------------------------------------------
-        # 2. clients
-        # --------------------------------------------------
         for client in self._get_active_clients():
             try:
                 if hasattr(client, "get_completions"):
                     res = await self._maybe_await(
                         client.get_completions,
                         partial,
-                        previous_tokens
+                        previous_tokens,
                     )
                     if res:
                         candidates.extend(res)
             except Exception:
-                logger.exception("client failed")
+                pass
 
-        # --------------------------------------------------
-        # 3. fallback (sync → thread)
-        # --------------------------------------------------
         if not candidates:
             if not previous_tokens:
-                res = await asyncio.to_thread(
-                    self._command_trie.collect,
-                    partial
+                candidates.extend(
+                    await asyncio.to_thread(self._command_trie.collect, partial)
                 )
-                candidates.extend(res)
-
             elif previous_tokens[0] in self._arg_tries:
-                res = await asyncio.to_thread(
-                    self._arg_tries[previous_tokens[0]].collect,
-                    partial
+                candidates.extend(
+                    await asyncio.to_thread(
+                        self._arg_tries[previous_tokens[0]].collect,
+                        partial,
+                    )
                 )
-                candidates.extend(res)
 
-            global_res = [
-                w for w in self._global_words if w.startswith(partial)
-            ]
-            candidates.extend(global_res)
+            candidates.extend(
+                [w for w in self._global_words if w.startswith(partial)]
+            )
 
         return sorted(set(candidates))
+
+    async def _maybe_await(self, fn, *args):
+        if inspect.iscoroutinefunction(fn):
+            return await fn(*args)
+        return fn(*args)
+    
+    # ======================================================
+    # LSP LAYER (NEW)
+    # ======================================================
+    
+    async def on_initialize(self, params: dict):
+        return {
+            "capabilities": {
+                "textDocumentSync": 1,
+                "completionProvider": {"triggerCharacters": [" "]},
+                "hoverProvider": True,
+            }
+        }
+
+    async def on_initialized(self, params: dict):
+        return None
+
+    async def on_did_open(self, params: dict):
+        return None
+
+    async def on_did_change(self, params: dict):
+        return None
+
+    async def on_did_close(self, params: dict):
+        return None
+
+    async def on_completion(self, params: dict):
+        partial = params["partial"]
+        tokens = params.get("tokens", [])
+        return await self.get_completions(partial, tokens)
+
+    async def on_hover(self, params: dict):
+        text = params["text"]
+        pos = params["position"]
+
+        return {
+            "contents": {
+                "kind": "markdown",
+                "value": f"```text\n{text}\n```",
+            }
+        }

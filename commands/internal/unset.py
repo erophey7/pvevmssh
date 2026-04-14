@@ -1,10 +1,11 @@
-
 from sshserver.commandapi import CommandAPI
 
-async def execute(api: CommandAPI) -> str:
-    parser = api.parser("unset", description="Remove environment variable")
+def build_parser(parser):
+    parser.description=command["help"]
     parser.add_argument("vars", nargs="+", help="Variables to unset")
 
+async def execute(api: CommandAPI) -> str:
+    parser = api.parser("unset", description=command["help"])
     parsed_args = parser.parse_args(api.args)
 
     env = api.env
@@ -19,5 +20,6 @@ async def execute(api: CommandAPI) -> str:
 command = {
     "name": "unset",
     "help": "Remove environment variable",
-    "func": execute
+    "func": execute,
+    "build_parser": build_parser
 }

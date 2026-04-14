@@ -1,7 +1,3 @@
-"""
-ANSI color test (standard, bright, 256‑color palette).
-"""
-
 from sshserver.commandapi import CommandAPI
 
 

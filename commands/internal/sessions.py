@@ -1,7 +1,3 @@
-"""
-List active SSH sessions.
-"""
-
 from sshserver.commandapi import CommandAPI
 from sshserver.session.manager import SessionStore
 import time

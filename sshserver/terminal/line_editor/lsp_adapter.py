@@ -1,207 +1,222 @@
-# sshserver/terminal/line_editor/lsp_adapter.py
 import typing as t
-import logging
 import asyncio
 import time
 
 from .text_utils import char_class, split_graphemes
 from . import ui
 
-logger = logging.getLogger(__name__)
-
-if t.TYPE_CHECKING:
-    from .core import LineEditorCore as LineEditor
-
 
 class LSPAdapter:
     def __init__(self):
-        self.lsp_server = None
+        self.connector = None
 
-        # Level 2 state
         self._completion_task: asyncio.Task | None = None
-        self._request_id = 0
-        self._last_tab_time = 0.0
-
-        # Inline hint (отдельный debounce + task)
         self._inline_task: asyncio.Task | None = None
-        self._inline_request_id: int = 0
-        self._last_inline_time: float = 0.0
 
-        self._debounce_interval = 0.08  # 80ms
+        self._request_id = 0
+        self._inline_request_id = 0
 
-    def set_engine(self, engine):
-        self.lsp_server = engine
+        self._debounce = 0.08
+        self._last_tab = 0.0
+        self._last_inline = 0.0
 
-    # ===================================================================
-    # Общий helper (используется и Tab, и inline)
-    # ===================================================================
-    @staticmethod
-    def _compute_completion_context(editor: "LineEditor") -> tuple[int, str, list[str]]:
+    # ======================================================
+    # BIND
+    # ======================================================
+
+    def set_engine(self, connector):
+        self.connector = connector
+
+    # ======================================================
+    # CONTEXT
+    # ======================================================
+
+    def _context(self, editor):
         buf = editor._buffer
         c = editor._cursor
-        start = c
-        while start > 0 and char_class(buf[start - 1]) == "word":
-            start -= 1
 
-        partial = "".join(buf[start:c])
+        s = "".join(buf[:c])
 
-        # context tokens
-        prev = buf[:start]
-        tokens = []
-        current = []
-        for g in prev:
-            if char_class(g) == "word":
-                current.append(g)
-            elif current:
-                tokens.append("".join(current))
-                current = []
-        if current:
-            tokens.append("".join(current))
+        # найти последний пробел
+        last_space = s.rfind(" ")
+
+        if last_space == -1:
+            # вводится команда
+            tokens = []
+            partial = s
+            start = 0
+        else:
+            # есть команда + аргументы
+            tokens = s[:last_space].split()
+            partial = s[last_space + 1:]
+            start = last_space + 1
 
         return start, partial, tokens
 
-    # ===================================================================
-    # TAB (полностью оригинальное поведение)
-    # ===================================================================
-    async def tab_complete(self, editor: "LineEditor") -> None:
-        if not self.lsp_server:
+    # ======================================================
+    # TAB COMPLETION
+    # ======================================================
+
+    async def tab_complete(self, editor):
+        if not self.connector:
             return
 
-        if self._should_debounce_tab():
+        if time.monotonic() - self._last_tab < self._debounce:
             return
+        self._last_tab = time.monotonic()
 
         if self._completion_task and not self._completion_task.done():
             self._completion_task.cancel()
 
         self._request_id += 1
-        request_id = self._request_id
+        req_id = self._request_id
 
-        start, partial, tokens = self._compute_completion_context(editor)
+        start, partial, tokens = self._context(editor)
         buf = editor._buffer
-        c = editor._cursor
-
-        editor._history_navigation_active = False
+        cursor = editor._cursor
 
         async def worker():
             try:
-                candidates = await self.lsp_server.get_completions(partial, tokens)
+                candidates = await self.connector.completion(partial, tokens)
 
-                if request_id != self._request_id:
+                if req_id != self._request_id:
                     return
 
                 if not candidates:
                     return
 
-                # SINGLE — оригинальное авто-вставление (не трогаем)
-                if len(candidates) == 1:
-                    full = candidates[0]
-                    del buf[start:c]
-                    insert = split_graphemes(full)
-                    buf[start:start] = insert
-                    editor._cursor = start + len(insert)
-                    await ui.redraw(editor)
+                # 👉 берём АКТУАЛЬНОЕ состояние после await
+                start2, partial2, _ = self._context(editor)
+                cursor2 = editor._cursor
+                buf2 = editor._buffer
+
+                # ==================================================
+                # ❗ НЕЛЬЗЯ автодополнять если partial пустой
+                # ==================================================
+                if not partial2:
+                    editor._completions = candidates
+                    editor._awaiting_menu = True
                     return
 
-                # MULTI
-                common = self._common_prefix(candidates)
-                inserted = False
-                if common.startswith(partial) and len(common) > len(partial):
-                    to_insert = common[len(partial):]
-                    insert = split_graphemes(to_insert)
-                    buf[c:c] = insert
-                    editor._cursor += len(insert)
-                    inserted = True
-                    await ui.redraw(editor)
+                # ==================================================
+                # ФИЛЬТРУЕМ кандидатов по partial
+                # ==================================================
+                matches = [c for c in candidates if c.startswith(partial2)]
 
-                if len(candidates) > 1:
-                    editor._completions = candidates[:]
-                    editor._completion_index = 0
-                    editor._awaiting_menu = True
-                    if not inserted:
+                # ==================================================
+                # SINGLE MATCH → REPLACE
+                # ==================================================
+                if len(matches) == 1:
+                    full = matches[0]
+
+                    # защита от лишней перезаписи
+                    if full != partial2:
+                        ins = split_graphemes(full)
+                        buf2[start2:cursor2] = ins
+                        editor._cursor = start2 + len(ins)
                         await ui.redraw(editor)
 
-                return
+                    return
+
+                # ==================================================
+                # MULTIPLE MATCHES → ТОЛЬКО МЕНЮ
+                # ==================================================
+                editor._completions = candidates
+                editor._awaiting_menu = True
 
             except asyncio.CancelledError:
-                return
-            except Exception:
-                import logging
-                logging.exception("tab completion failed")
+                pass
 
         self._completion_task = asyncio.create_task(worker())
 
-    # ===================================================================
-    # INLINE HINT (автоматически, без блокировки ввода)
-    # ===================================================================
-    def schedule_inline_hint(self, editor: "LineEditor") -> None:
-        """Вызывается синхронно из feed_text под lock — мгновенно."""
-        if not self.lsp_server:
+    # ======================================================
+    # INLINE HINT
+    # ======================================================
+
+    def schedule_inline_hint(self, editor):
+        if not self.connector:
             return
 
-        if self._should_debounce_inline():
+        if time.monotonic() - self._last_inline < self._debounce:
             return
+        self._last_inline = time.monotonic()
 
         if self._inline_task and not self._inline_task.done():
             self._inline_task.cancel()
 
         self._inline_request_id += 1
-        request_id = self._inline_request_id
+        req_id = self._inline_request_id
 
-        start, partial, tokens = self._compute_completion_context(editor)
+        start, partial, tokens = self._context(editor)
 
-        async def inline_worker():
+        async def worker():
             try:
-                candidates = await self.lsp_server.get_completions(partial, tokens)
+                candidates = await self.connector.completion(partial, tokens)
 
-                if request_id != self._inline_request_id:
+                if req_id != self._inline_request_id:
                     return
 
-                if not candidates or len(candidates) != 1:
-                    if editor._inline_hint is not None:
+                if len(candidates) == 1:
+                    full = candidates[0]
+                    if full.startswith(partial):
+                        editor._inline_hint = full[len(partial):]
+                    else:
                         editor._inline_hint = None
-                        await ui.redraw(editor)
-                    return
-
-                full = candidates[0]
-                if full.startswith(partial) and len(full) > len(partial):
-                    editor._inline_hint = full[len(partial):]
                 else:
                     editor._inline_hint = None
 
                 await ui.redraw(editor)
 
             except asyncio.CancelledError:
-                return
-            except Exception:
-                import logging
-                logging.exception("inline hint failed")
+                pass
 
-        self._inline_task = asyncio.create_task(inline_worker())
+        self._inline_task = asyncio.create_task(worker())
 
-    def _should_debounce_tab(self) -> bool:
-        now = time.monotonic()
-        if now - self._last_tab_time < self._debounce_interval:
-            return True
-        self._last_tab_time = now
-        return False
+    # =======================================================
+    # MENU ACCEPT
+    # =======================================================
+    async def menu_accept(self, editor) -> None:
+        if not self.connector:
+            return
 
-    def _should_debounce_inline(self) -> bool:
-        now = time.monotonic()
-        if now - self._last_inline_time < self._debounce_interval:
-            return True
-        self._last_inline_time = now
-        return False
+        # защита от пустого состояния
+        if not editor._completions or editor._completion_index is None:
+            return
+
+        selected = editor._completions[editor._completion_index]
+
+        start, partial, _ = self._context(editor)
+
+        buf = editor._buffer
+        cursor = editor._cursor
+
+        if start > cursor:
+            start = cursor
+
+        replacement = split_graphemes(selected)
+
+        buf[start:cursor] = replacement
+        editor._cursor = start + len(replacement)
+
+        editor._completions = None
+        editor._completion_index = None
+        editor._inline_hint = None
+        editor._awaiting_menu = False
+        editor._history_navigation_active = False
+
+        await ui.redraw(editor)
+    # ======================================================
+    # UTIL
+    # ======================================================
 
     @staticmethod
-    def _common_prefix(words: list[str]) -> str:
+    def _common_prefix(words):
         if not words:
             return ""
-        prefix = words[0]
+        p = words[0]
         for w in words[1:]:
             i = 0
-            while i < len(prefix) and i < len(w) and prefix[i] == w[i]:
+            while i < len(p) and i < len(w) and p[i] == w[i]:
                 i += 1
-            prefix = prefix[:i]
-            if not prefix:
-                break
-        return prefix
+            p = p[:i]
+        return p

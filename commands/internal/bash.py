@@ -1,7 +1,3 @@
-"""
-Manual PTY setup for interactive bash.
-"""
-
 import asyncio
 import os
 import fcntl

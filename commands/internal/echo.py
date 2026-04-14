@@ -1,28 +1,23 @@
-r"""
-GNU coreutils echo — полный Linux-совместимый вариант.
-"""
+from sshserver.commandapi import CommandAPI
 
-from sshserver.commandapi import CommandAPI, CommandArgumentError
-
-
-async def execute(api: CommandAPI) -> str | None:
-    parser = api.parser("echo", description="Display text with variable expansion and backslash escapes")
+def build_parser(parser):
+    parser.description=command["help"]
     parser.add_argument("-n", action="store_true", help="do not output the trailing newline")
     parser.add_argument("-e", action="store_true", help="enable interpretation of backslash escapes")
     parser.add_argument("-E", action="store_true", help="disable interpretation of backslash escapes (default)")
     parser.add_argument("text", nargs="*", help="Strings to echo")
 
-    try:
-        ns = parser.parse_args(api.args)
-    except CommandArgumentError as e:
-        return f"Argument error: {e}\n"
+async def execute(api: CommandAPI) -> str | None:
+    parser = api.parser("echo", description=command["help"])
 
-    no_newline = ns.n
-    interpret_escapes = ns.e
-    if ns.E and not interpret_escapes:
+    parsed_args = parser.parse_args(api.args)
+
+    no_newline = parsed_args.n
+    interpret_escapes = parsed_args.e
+    if parsed_args.E and not interpret_escapes:
         interpret_escapes = False
 
-    output_args = ns.text or []
+    output_args = parsed_args.text or []
 
     
     def expand_vars(text: str) -> str:
@@ -85,4 +80,5 @@ command = {
     "name": "echo",
     "help": "Display text with variable expansion and backslash escapes",
     "func": execute,
+    "build_parser": build_parser
 }

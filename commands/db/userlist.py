@@ -1,29 +1,23 @@
-# commands/db/userlist.py
-"""
-List users from database.
-"""
+from sshserver.commandapi import CommandAPI
 
-from sshserver.commandapi import CommandAPI, CommandArgumentError
-
-
-async def execute(api: CommandAPI) -> str | None:
-    api.require_permission("db_viewer")
-
-    parser = api.parser("userlist", description="List users")
+def build_parser(parser):
+    parser.description=command["help"]
     parser.add_argument("-g", "--group", help="Show only users belonging to the given group ID")
     parser.add_argument("-G", "--show-group", action="store_true", help="Include group ID in output")
 
-    try:
-        ns = parser.parse_args(api.args)
-    except CommandArgumentError as e:
-        return f"Argument error: {e}\n"
+async def execute(api: CommandAPI) -> str | None:
+    api.require_permission("db_viewer")
+    parser = api.parser("userlist", description=command["help"])
+
+    parsed_args = parser.parse_args(api.args)
+
 
     group_id = None
-    if ns.group is not None:
+    if parsed_args.group is not None:
         try:
-            group_id = int(ns.group)
+            group_id = int(parsed_args.group)
         except ValueError:
-            return f"Invalid group ID: {ns.group}\n"
+            return f"Invalid group ID: {parsed_args.group}\n"
 
     if group_id is not None:
         rows = await api.fetch_all(
@@ -40,7 +34,7 @@ async def execute(api: CommandAPI) -> str | None:
 
     lines = []
     for username, gid in rows:
-        if ns.show_group:
+        if parsed_args.show_group:
             lines.append(f"{username} (group {gid})")
         else:
             lines.append(username)
@@ -51,5 +45,6 @@ command = {
     "name": "userlist",
     "help": "List users",
     "func": execute,
-    "permissions": ["db_viewer"]
+    "permissions": ["db_viewer"],
+    "build_parser": build_parser
 }

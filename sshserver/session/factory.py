@@ -8,6 +8,7 @@ from .history import CommandHistory
 from .manager import SessionStore, current_session
 from .syntax_highlight import StyleContext
 from sshserver.permissions import get_user_group, resolve_permissions
+from sshserver.dispatcher import CommandDispatcher
 from helpers.globals import GlobalStore
 
 logger = logging.getLogger(__name__)
@@ -29,8 +30,11 @@ async def create_session(process) -> SessionInfo:
     term_size = getattr(process, "term_size", (80, 24, 0, 0))
     width, height, pixwidth, pixheight = term_size
 
+    dispatcher = CommandDispatcher(username)
+
     session = SessionInfo(
         username=username,
+        dispatcher=dispatcher,
         client_addr=client_addr,
         term_type=term_type,
         colorterm=colorterm,
@@ -76,6 +80,7 @@ async def create_session(process) -> SessionInfo:
     session.extra["permissions"] = user_permissions
     session.extra["term_modes"] = term_modes
     session.extra["client_env"] = client_env
+    session.extra["auth_method"] = process.get_extra_info("auth_method")
 
     SessionStore().add(session)
     current_session.set(session)

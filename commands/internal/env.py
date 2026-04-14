@@ -1,4 +1,4 @@
-from sshserver.commandapi import CommandAPI, CommandArgumentError
+from sshserver.commandapi import CommandAPI
 
 
 def shell_escape(value: str) -> str:
@@ -10,21 +10,20 @@ def shell_escape(value: str) -> str:
         .replace("\t", "\\t")
     )
 
-
-async def execute(api: CommandAPI) -> str:
-    parser = api.parser("env", description="Manage your environment")
+def build_parser(parser):
+    parser.description=command["help"]
     parser.add_argument("-f", "--flush", help="Flush env [all, runtime, db]")
     parser.add_argument("-s", "--save", action="store_true", help="Save env to db")
 
-    try:
-        ns = parser.parse_args(api.args)
-    except CommandArgumentError as e:
-        return f"Argument error: {e}\n"
+
+async def execute(api: CommandAPI) -> str:
+    parser = api.parser("env", description=command["help"])
+    parsed_args = parser.parse_args(api.args)
 
     env = api.env
 
-    if ns.flush:
-        store = ns.flush
+    if parsed_args.flush:
+        store = parsed_args.flush
         if store not in ("all", "runtime", "db"):
             await api.write_error("Invalid flush target. Use: all, runtime, db\n")
         else:
@@ -32,7 +31,7 @@ async def execute(api: CommandAPI) -> str:
             await api.write_success(f"Flush complete ({store})\n")
         return ""
 
-    if ns.save:
+    if parsed_args.save:
         await env.save()
         await api.write_success("Environment saved\n")
         return ""
@@ -47,5 +46,6 @@ async def execute(api: CommandAPI) -> str:
 command = {
     "name": "env",
     "help": "Manage your environment",
-    "func": execute
+    "func": execute,
+    "build_parser": build_parser
 }

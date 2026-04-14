@@ -1,9 +1,12 @@
 """Core types and dataclasses for the session layer."""
 
 from dataclasses import dataclass, field
-from typing import Dict, Any
+from typing import Dict, Any, TYPE_CHECKING
 import uuid
 import time
+
+if TYPE_CHECKING:
+    from sshserver.dispatcher import CommandDispatcher
 
 
 @dataclass
@@ -13,6 +16,7 @@ class SessionInfo:
     """
     uuid: str = field(default_factory=lambda: str(uuid.uuid4()))
     username: str = ""
+    dispatcher: CommandDispatcher = None
     client_addr: str = ""
     term_type: str = ""
     colorterm: str = ""

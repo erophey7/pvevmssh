@@ -1,7 +1,3 @@
-"""
-Display server and session information.
-"""
-
 from sshserver.commandapi import CommandAPI
 from sshserver.session.manager import SessionStore
 

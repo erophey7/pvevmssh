@@ -17,6 +17,7 @@ from helpers.path import Paths
 from sshserver.session.manager import get_current_session
 from sshserver.permissions import has_permission
 from sshserver.commandapi import CommandAPI, CommandError, CommandPermissionError, CommandArgumentError, CommandAbort
+from sshserver.commandapi.parser import ArgumentParser
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +70,9 @@ class CommandDispatcher:
                     cmd["permissions"] = list(set(cmd["permissions"]) | parent_perms)
 
                 self.commands[cmd_name] = cmd
+                parser = self._build_parser_for_command(cmd_name, cmd)
+                if parser:
+                    cmd["_parser"] = parser
                 logger.debug("Loaded single-file command: %s (perms: %s)", cmd_name, cmd.get("permissions"))
         except Exception as e:
             logger.error("Failed to load single-file command %s: %s", module_name, e)
@@ -93,6 +97,9 @@ class CommandDispatcher:
                     cmd["permissions"] = list(set(cmd["permissions"]) | parent_perms)
 
                 self.commands[cmd_name] = cmd
+                parser = self._build_parser_for_command(cmd_name, cmd)
+                if parser:
+                    cmd["_parser"] = parser
                 logger.debug("Loaded command module: %s", cmd_name)
 
             else:
@@ -106,6 +113,21 @@ class CommandDispatcher:
 
         except Exception as e:
             logger.error("Failed to load package %s: %s", package_name, e)
+
+    ########## building parser ###########
+    def _build_parser_for_command(self, cmd_name: str, cmd: Dict[str, Any]):
+        builder = cmd.get("build_parser")
+        if not builder:
+            return None
+
+        try:
+            parser = ArgumentParser(prog=cmd_name)
+            builder(parser)
+
+            return parser
+        except Exception as e:
+            logger.error("Failed to build parser for command %s: %s", cmd_name, e)
+            return None
 
     ########## Command Execution ##########
     async def handle(self, input_line: str) -> Any:
@@ -138,8 +160,9 @@ class CommandDispatcher:
 
         try:
             func = cmd_config["func"]
+            parser = cmd_config.get("_parser")
             # Create CommandAPI instance for this command execution
-            api = CommandAPI(self.username, args)
+            api = CommandAPI(self.username, args, parser=parser)
             if inspect.iscoroutinefunction(func):
                 return await func(api)
             else:
@@ -150,6 +173,25 @@ class CommandDispatcher:
         except Exception as e:
             logger.exception("Error in command '%s'", cmd_name)
             return f"Error in command '{cmd_name}': {e}\n"
+        
+    def get_command_parser(self, cmd_name: str):
+        cmd = self.commands.get(cmd_name)
+        if not cmd:
+            return None
+    
+        # уже закеширован
+        if "_parser" in cmd:
+            return cmd["_parser"]
+    
+        # есть builder → создаём лениво
+        builder = cmd.get("build_parser")
+        if builder:
+            parser = self._build_parser_for_command(cmd_name, cmd)
+            if parser:
+                cmd["_parser"] = parser
+                return parser
+    
+        return None
 
     ########## Help Generation ##########
     def _generate_help(self) -> str:

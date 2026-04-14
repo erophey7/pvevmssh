@@ -305,12 +305,17 @@ class LineEditor(LineEditorCore):
         """Tab при открытом меню = следующий вариант. Иначе — запрос LSP."""
         async with self._lock:
             if self._completions and len(self._completions) > 1:
-                self._completion_index = (self._completion_index + 1) % len(self._completions)
+                if self._completion_index is None:
+                    self._completion_index = 0
+                else:
+                    self._completion_index = (self._completion_index + 1) % len(self._completions)
+
                 await ui.redraw(self)
                 return
 
             if not self._lsp_adapter:
                 return
+
             await self._lsp_adapter.tab_complete(self)
 
     async def accept_inline_hint(self) -> None:
@@ -388,24 +393,7 @@ class LineEditor(LineEditorCore):
 
     async def menu_accept(self) -> None:
         async with self._lock:
-            if not self._completions or self._completion_index is None:
-                return
-
-            selected = self._completions[self._completion_index]
-
-            start = self._cursor
-            while start > 0 and char_class(self._buffer[start - 1]) == "word":
-                start -= 1
-
-            del self._buffer[start:self._cursor]
-            insert = split_graphemes(selected)
-            self._buffer[start:start] = insert
-            self._cursor = start + len(insert)
-
-            self._completions = None
-            self._inline_hint = None
-            self._history_navigation_active = False
-            await ui.redraw(self)
+            await self._lsp_adapter.menu_accept(self)
 
     async def menu_cancel(self) -> None:
         async with self._lock:

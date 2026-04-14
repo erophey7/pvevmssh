@@ -1,16 +1,10 @@
-# commands/db/sshkey.py
-"""
-Manage SSH keys and optionally set a Proxmox API token.
-"""
-
 import json
 from pveapi import is_proxmox_token_valid
 from helpers.globals import GlobalStore
-from sshserver.commandapi import CommandAPI, CommandArgumentError, CommandPermissionError
+from sshserver.commandapi import CommandAPI, CommandPermissionError
 
-
-async def execute(api: CommandAPI) -> str | None:
-    parser = api.parser("sshkey", description="Manage SSH keys and optionally set a Proxmox API token")
+def build_parser(parser):
+    parser.description=command["help"]
 
     subparsers = parser.add_subparsers(dest="subcommand", required=True)
 
@@ -28,12 +22,13 @@ async def execute(api: CommandAPI) -> str | None:
     p_del.add_argument("index", help="Key index (0-based)")
     p_del.add_argument("--user", help="Target username")
 
-    try:
-        ns = parser.parse_args(api.args)
-    except CommandArgumentError as e:
-        return f"Argument error: {e}\n"
+async def execute(api: CommandAPI) -> str | None:
+    parser = api.parser("sshkey", description=command["help"])
 
-    target_user = ns.user or api.username
+    parsed_args = parser.parse_args(api.args)
+
+
+    target_user = parsed_args.user or api.username
 
     if target_user != api.username and not api.has_permission("db_admin"):
         raise CommandPermissionError("db_admin required to modify other users")
@@ -48,7 +43,7 @@ async def execute(api: CommandAPI) -> str | None:
     ssh_keys_raw, api_key, api_secret_enc = row
     ssh_keys = json.loads(ssh_keys_raw or "[]")
 
-    if ns.subcommand == "list":
+    if parsed_args.subcommand == "list":
         lines = [f"SSH keys for {target_user}:"] if ssh_keys else [f"No SSH keys for {target_user}."]
         for i, key in enumerate(ssh_keys):
             short = key[:80] + "..." if len(key) > 80 else key
@@ -56,10 +51,10 @@ async def execute(api: CommandAPI) -> str | None:
         lines.append(f"\nProxmox API token ID: {api_key} (secret stored)" if api_key else "\nNo API token configured.")
         return "\n".join(lines) + "\n"
 
-    elif ns.subcommand == "add":
-        if ns.key in ssh_keys:
+    elif parsed_args.subcommand == "add":
+        if parsed_args.key in ssh_keys:
             return f"Key already exists for {target_user}.\n"
-        ssh_keys.append(ns.key)
+        ssh_keys.append(parsed_args.key)
 
         new_api_secret_enc = api_secret_enc
         if api_key:
@@ -86,11 +81,11 @@ async def execute(api: CommandAPI) -> str | None:
             )
         return f"SSH key added for {target_user}.\n"
 
-    elif ns.subcommand == "delete":
+    elif parsed_args.subcommand == "delete":
         try:
-            idx = int(ns.index)
+            idx = int(parsed_args.index)
         except ValueError:
-            return f"Invalid index: {ns.index}\n"
+            return f"Invalid index: {parsed_args.index}\n"
         if idx < 0 or idx >= len(ssh_keys):
             return f"Invalid index {idx}. Available: 0..{len(ssh_keys)-1}\n"
 
@@ -112,5 +107,5 @@ command = {
     "name": "sshkey",
     "help": "Manage SSH keys and optionally set a Proxmox API token",
     "func": execute,
-    "permissions": [],
+    "build_parser": build_parser
 }

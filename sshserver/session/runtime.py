@@ -2,7 +2,6 @@
 
 import logging
 
-from sshserver.dispatcher import CommandDispatcher
 from sshserver.terminal import EOF
 from .prompt import expand_ps1
 
@@ -14,7 +13,7 @@ async def run_session(session, terminal) -> None:
     Main session loop: prompt, read line, dispatch, output result.
     """
     username = session.username
-    dispatcher = CommandDispatcher(username)
+    dispatcher = session.dispatcher
 
     env = session.extra.get("env")
     if env.get("HELLOMSG", False):

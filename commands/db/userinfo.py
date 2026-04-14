@@ -1,25 +1,18 @@
-# commands/db/userinfo.py
-"""
-Show user information from database.
-"""
-
 import json
-from sshserver.commandapi import CommandAPI, CommandArgumentError
+from sshserver.commandapi import CommandAPI
 
+def build_parser(parser):
+    parser.description=command["help"]
+    parser.add_argument("-a", "--all", action="store_true", help="Show all stored fields (including SSH keys, saved_env, history)")
+    parser.add_argument("username", nargs="?", help="USERNAME (optional, defaults to current user)")
 
 async def execute(api: CommandAPI) -> str | None:
     api.require_permission("db_viewer")
 
-    parser = api.parser("userinfo", description="Show information about a user")
-    parser.add_argument("-a", "--all", action="store_true", help="Show all stored fields (including SSH keys, saved_env, history)")
-    parser.add_argument("username", nargs="?", help="USERNAME (optional, defaults to current user)")
+    parser = api.parser("userinfo", description=command["help"])
+    parsed_args = parser.parse_args(api.args)
 
-    try:
-        ns = parser.parse_args(api.args)
-    except CommandArgumentError as e:
-        return f"Argument error: {e}\n"
-
-    target_username = ns.username or api.username
+    target_username = parsed_args.username or api.username
 
     row = await api.fetch_one(
         "SELECT username, group_id, created_at, ssh_keys, saved_env, history "
@@ -34,7 +27,7 @@ async def execute(api: CommandAPI) -> str | None:
 
     force_group = api.config.get(f"auth.force_group.{db_username}", None)
 
-    if ns.all:
+    if parsed_args.all:
         ssh_keys = json.loads(ssh_keys_raw or "[]")
         saved_env = json.loads(saved_env_raw or "{}")
         history = json.loads(history_raw or "[]")
@@ -69,5 +62,6 @@ command = {
     "name": "userinfo",
     "help": "Show information about a user",
     "func": execute,
-    "permissions": ["db_viewer"]
+    "permissions": ["db_viewer"],
+    "build_parser": build_parser
 }

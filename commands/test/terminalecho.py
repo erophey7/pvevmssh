@@ -1,21 +1,16 @@
-"""
-switch terminal echoing
-"""
+from sshserver.commandapi import CommandAPI
 
-from sshserver.commandapi import CommandAPI, CommandArgumentError
-
-
-async def execute(api: CommandAPI) -> str | None:
-    parser = api.parser("termecho", description="Switch terminal echo")
+def build_parser(parser):
+    parser.description=command["help"]
     parser.add_argument("state", nargs="?", choices=["on", "off"], help="on or off")
 
-    try:
-        ns = parser.parse_args(api.args)
-    except CommandArgumentError as e:
-        return f"Argument error: {e}\n"
+async def execute(api: CommandAPI) -> str | None:
+    parser = api.parser("termecho", description=command["help"])
+    
+    parsed_args = parser.parse_args(api.args)
 
-    if ns.state:
-        echoing = ns.state == "on"
+    if parsed_args.state:
+        echoing = parsed_args.state == "on"
     else:
         echoing = not api.terminal.input.editor.echo
 
@@ -28,5 +23,6 @@ command = {
     "name": "termecho",
     "help": "Switch terminal echo",
     "func": execute,
-    "permissions": ["tester_permission"]
+    "permissions": ["tester_permission"],
+    "build_parser": build_parser
 }

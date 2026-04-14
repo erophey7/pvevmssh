@@ -1,16 +1,18 @@
-from sshserver.commandapi import CommandAPI, CommandArgumentError
+from sshserver.commandapi import CommandAPI
 
-
-async def execute(api: CommandAPI) -> str:
-    parser = api.parser("history", description="Manage your command history")
+def build_parser(parser):
+    parser.description=command["help"]
     parser.add_argument("-f", "--flush", help="Flush history [all, runtime, db]")
     parser.add_argument("-s", "--save", action="store_true", help="Save history to db")
     parser.add_argument("-m", "--max", help="Max history to shown")
 
-    try:
-        ns = parser.parse_args(api.args)
-    except CommandArgumentError as e:
-        return f"Argument error: {e}\n"
+async def execute(api: CommandAPI) -> str:
+    parser = api.parser("history", description=command["help"])
+
+    ns = parser.parse_args(api.args)
+
+    api.logger.debug("executed")
+
 
     history = api.history
 
@@ -34,5 +36,6 @@ async def execute(api: CommandAPI) -> str:
 command = {
     "name": "history",
     "help": "Manage your command history",
-    "func": execute
+    "func": execute,
+    "build_parser": build_parser
 }

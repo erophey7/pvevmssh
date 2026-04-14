@@ -1,7 +1,3 @@
-"""
-Test special characters (box drawing, blocks, Unicode).
-"""
-
 from sshserver.commandapi import CommandAPI
 
 

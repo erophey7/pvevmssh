@@ -1,7 +1,3 @@
-"""
-Show current user, group and permissions.
-"""
-
 from sshserver.commandapi import CommandAPI
 
 

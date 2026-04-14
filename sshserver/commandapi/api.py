@@ -74,9 +74,10 @@ class CommandAPI:
 
     version = "1.0.0"
 
-    def __init__(self, username: str, args: tuple[str, ...]) -> None:
+    def __init__(self, username: str, args: tuple[str, ...], parser: ArgumentParser = None) -> None:
         self.username: str = username
         self.args: tuple[str, ...] = args
+        self._parser = parser
 
         self.session = get_current_session()
         self.terminal: Terminal = self.session.extra["terminal"]
@@ -226,6 +227,9 @@ class CommandAPI:
         """
         if prog is None:
             prog = self.args[0] if self.args else "command"
+
+        if self._parser:
+            return self._parser
     
         return ArgumentParser(prog=prog, description=description)
 
