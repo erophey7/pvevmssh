@@ -6,7 +6,7 @@ from contextlib import suppress
 
 import asyncssh
 
-from .input_handler import InputHandler
+from ._input_handler import InputHandler
 from .output_handler import OutputHandler
 from .pty_handler import PTYHandler
 from sshserver.session.manager import get_current_session

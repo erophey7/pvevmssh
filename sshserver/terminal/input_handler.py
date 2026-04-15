@@ -124,11 +124,6 @@ class InputHandler:
 
         # Enter
         if b0 in (0x0D, 0x0A):
-            if getattr(self.editor, "_completions", None) is not None:
-                await self.editor.menu_accept()
-                if len(pending) >= 2 and pending[1] in (0x0D, 0x0A) and pending[1] != b0:
-                    return None, 2
-                return None, 1
             line = await self.editor.enter()
             if len(pending) >= 2 and pending[1] in (0x0D, 0x0A) and pending[1] != b0:
                 return line, 2
@@ -175,7 +170,7 @@ class InputHandler:
         await self.editor.feed_char(char)
         return None, char_len
 
-    # ==================== Helpers (без изменений) ====================
+    # ==================== Helpers ====================
     def _utf8_char_len(self, b0: int) -> int:
         if b0 < 0x80: return 1
         if (b0 & 0xE0) == 0xC0: return 2

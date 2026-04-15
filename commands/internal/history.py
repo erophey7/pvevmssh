@@ -2,7 +2,7 @@ from sshserver.commandapi import CommandAPI
 
 def build_parser(parser):
     parser.description=command["help"]
-    parser.add_argument("-f", "--flush", help="Flush history [all, runtime, db]")
+    parser.add_argument("-f", "--flush", choices=["all", "runtime", "db"], help="Flush history [all, runtime, db]")
     parser.add_argument("-s", "--save", action="store_true", help="Save history to db")
     parser.add_argument("-m", "--max", help="Max history to shown")
 

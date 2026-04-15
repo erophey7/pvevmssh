@@ -46,5 +46,6 @@ command = {
     "name": "chgroup",
     "help": "Change group of one or more users",
     "func": execute,
-    "permissions": ["db_admin"]
+    "permissions": ["db_admin"],
+    "build_parser": build_parser
 }

@@ -33,7 +33,7 @@ async def handle_client(process):
         lsp_engine.setup_default("shell")
         connector = InCodeLSPConnector(lsp_engine)
         terminal.input.editor.set_lsp_engine(connector)
-        terminal.input.editor.style_ctx = session.extra["style"]
+        terminal.input.editor.vpub.style_ctx = session.extra["style"]
 
         terminal.session = session
         session.extra["terminal"] = terminal

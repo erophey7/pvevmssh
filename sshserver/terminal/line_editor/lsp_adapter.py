@@ -2,7 +2,7 @@ import typing as t
 import asyncio
 import time
 
-from .text_utils import char_class, split_graphemes
+from .text_utils import split_graphemes
 from . import ui
 
 
