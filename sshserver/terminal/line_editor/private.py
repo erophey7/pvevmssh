@@ -1,66 +1,23 @@
-"""
-Performing silent refactor
-in testing
-"""
-
-# ===============================================
-# IMPORTS
-# ===============================================  
 # project objects & funcs
 from sshserver.session import CommandHistory, get_current_session
 from helpers.globals import GlobalStore
 
 # self objects & internal
-from ._objects import LineEditorPrivateVars, LineEditorPublicVars
-from ._private_internal import LineEditorPrivateInternal
+from .objects import LineEditorPrivateVars, LineEditorPublicVars
+from .private_internal import LineEditorPrivateInternal
+from .lsp_adapter import LSPAdapter
 
 
 # self funcs
 from .text_utils import split_graphemes, char_class
 from .types import EOF
-from . import ui
+from .ui import LineEditorUI
 
 # other imports
 from typing import Optional
 
-
-# temp proxy
-class EditorProxy:
-    _map = {
-        "_buffer": ("vpriv", "buffer"),
-        "_cursor": ("vpriv", "cursor"),
-        "_completions": ("vpriv", "completions"),
-        "_completion_index": ("vpriv", "completion_index"),
-        "_inline_hint": ("vpriv", "inline_hint"),
-        "_last_layout": ("vpriv", "last_layout"),
-        "_prompt_segments": ("vpriv", "prompt_segments"),
-        "_awaiting_menu": ("vpriv", "awaiting_menu"),
-        "_history_navigation_active": ("vpriv", "history_navigation_active"),
-
-        "terminal": ("vpub", "terminal"),
-        "style_ctx": ("vpub", "style_ctx"),
-        "echo": ("vpub", "echo"),
-    }
-
-    def __init__(self, vpriv, vpub):
-        object.__setattr__(self, "_vpriv", vpriv)
-        object.__setattr__(self, "_vpub", vpub)
-
-    def __getattr__(self, name):
-        if name in self._map:
-            src, attr = self._map[name]
-            target = self._vpriv if src == "vpriv" else self._vpub
-            return getattr(target, attr)
-
-        raise AttributeError(name)
-
-    def __setattr__(self, name, value):
-        if name in self._map:
-            src, attr = self._map[name]
-            target = self._vpriv if src == "vpriv" else self._vpub
-            setattr(target, attr, value)
-        else:
-            object.__setattr__(self, name, value)
+import logging
+logger = logging.getLogger(__name__)
 
 
 class LineEditorLogic:
@@ -71,6 +28,9 @@ class LineEditorLogic:
         self.vpriv = LineEditorPrivateVars()
         self.vpub = LineEditorPublicVars(terminal)
         self.internal = LineEditorPrivateInternal(self.vpriv, self.vpub)
+
+        self.ui = LineEditorUI(self.vpriv, self.vpub)
+        self.lsp_adapter = LSPAdapter(self.vpriv, self.vpub, self.ui)
 
         self.ensure()
 
@@ -95,6 +55,10 @@ class LineEditorLogic:
     def get_pub_vars(self):
         return self.vpub
     
+    def get_lsp_adapter(self):
+        if hasattr(self, "lsp_adapter"):
+            return self.lsp_adapter
+    
     # ===============================================
     # RESET
     # ===============================================    
@@ -103,36 +67,13 @@ class LineEditorLogic:
             self.internal.reset_state()
 
     # ===============================================
-    # CURRENT LINE FUNC
+    # CURRENT LINE
     # ===============================================  
     def current_line(self) -> str:
         return "".join(self.vpriv.buffer)
-    
-    # ===============================================
-    # TEMP REFACTOR OVERRIDES
-    # ===============================================  
-    async def ___move_cursor_only_or_redraw(self) -> None:
-        editor = EditorProxy(self.vpriv, self.vpub)
-        await ui.move_cursor_only_or_redraw(editor)
-
-    async def ___redraw(self) -> None:
-        editor = EditorProxy(self.vpriv, self.vpub)
-        await ui.redraw(editor)
-
-    async def ___tab_complete(self) -> None:
-        editor = EditorProxy(self.vpriv, self.vpub)
-        await self.vpriv.lsp_adapter.tab_complete(editor)
-
-    async def ___menu_accept(self) -> None:
-        editor = EditorProxy(self.vpriv, self.vpub)
-        await self.vpriv.lsp_adapter.menu_accept(editor)
-
-    async def ___schedule_inline_hint(self) -> None:
-        editor = EditorProxy(self.vpriv, self.vpub)
-        self.vpriv.lsp_adapter.schedule_inline_hint(editor)
 
     # ===============================================
-    # FEED TEXT (redraw, schedule_inline_hint)
+    # FEED TEXT
     # ===============================================  
     async def feed_text(self, text: str) -> None:
         async with self.vpriv.lock:
@@ -151,16 +92,16 @@ class LineEditorLogic:
 
             self.vpriv.completions = None
             self.vpriv.inline_hint = None
-            await self.___schedule_inline_hint()
+            self.lsp_adapter.schedule_inline_hint()
             self.vpriv.history_navigation_active = False
-            await self.___redraw()
+            await self.ui.redraw()
 
     # ===============================================
-    # RESIZE (redraw)
+    # RESIZE
     # ===============================================  
     async def resize(self) -> None:
         async with self.vpriv.lock:
-            await self.___redraw()
+            await self.ui.redraw()
 
     # ===============================================
     # ENTER TEXT ACTION
@@ -178,35 +119,35 @@ class LineEditorLogic:
             return line
         
     # ===============================================
-    # TAB COMPLETE (tab_complete)
+    # TAB COMPLETE
     # ===============================================
     async def tab_complete(self) -> None:
         async with self.vpriv.lock:
-            if not self.vpriv.lsp_adapter:
+            if not self.lsp_adapter:
                 return
-            await self.___tab_complete()
+            await self.lsp_adapter.tab_complete()
         
     # ===============================================
-    # REQUEST MENU (redraw)
+    # REQUEST MENU
     # ===============================================
     async def menu_request(self) -> None:
         async with self.vpriv.lock:
             if self.vpriv.completions and len(self.vpriv.completions) > 1:
                 if self.vpriv.completion_index is None:
                     self.vpriv.completion_index = 0
-                await self.___redraw()
+                await self.ui.redraw()
                 return
 
     # ===============================================
-    # MENU ACCEPT (menu_accept)
+    # MENU ACCEPT
     # ===============================================
     async def menu_accept(self) -> None:
         async with self.vpriv.lock:
             if self.vpriv.completions is not None:
-                await self.___menu_accept()
+                await self.lsp_adapter.menu_accept()
 
     # ===============================================
-    # INLINE HINT ACCEPT (redraw)
+    # INLINE HINT ACCEPT
     # ===============================================
     async def accept_inline_hint(self) -> None:
         """Принимаем ghost-подсказку (вызывается стрелкой →)"""
@@ -219,18 +160,18 @@ class LineEditorLogic:
             self.vpriv.inline_hint = None
             self.vpriv.completions = None
             self.vpriv.history_navigation_active = False
-            await self.___redraw()
+            await self.ui.redraw()
 
     # ===============================================
-    # HIDE MENU (redraw)
+    # HIDE MENU
     # ===============================================
     async def menu_hide(self) -> None:
         async with self.vpriv.lock:
             self.internal.menu_hide()
-            await self.___redraw()
+            await self.ui.redraw()
 
     # ===============================================
-    # MENU NAV (redraw)
+    # MENU NAV
     # ===============================================
     async def menu_up(self) -> None:
         async with self.vpriv.lock:
@@ -238,8 +179,12 @@ class LineEditorLogic:
                 return
             cols = self.internal.get_menu_columns()
             num = len(self.vpriv.completions)
+            logger.debug(f"Before menu up: cols={cols} | num={num} | completion_index={self.vpriv.completion_index}")
+            if self.vpriv.completion_index is None:
+                self.vpriv.completion_index = 0
             self.vpriv.completion_index = (self.vpriv.completion_index - cols) % num
-            await self.___redraw()
+            await self.ui.redraw()
+            logger.debug(f"After menu up: cols={cols} | num={num} | completion_index={self.vpriv.completion_index}")
 
     async def menu_down(self) -> None:
         async with self.vpriv.lock:
@@ -247,27 +192,35 @@ class LineEditorLogic:
                 return
             cols = self.internal.get_menu_columns()
             num = len(self.vpriv.completions)
+            logger.debug(f"Before menu down: cols={cols} | num={num} | completion_index={self.vpriv.completion_index}")
+            if self.vpriv.completion_index is None:
+                self.vpriv.completion_index = 0
             self.vpriv.completion_index = (self.vpriv.completion_index + cols) % num
-            await self.___redraw()
+            await self.ui.redraw()
+            logger.debug(f"After menu down: cols={cols} | num={num} | completion_index={self.vpriv.completion_index}")
 
     async def menu_prev(self) -> None:
         async with self.vpriv.lock:
             if not self.vpriv.completions:
                 return
             num = len(self.vpriv.completions)
+            if self.vpriv.completion_index is None:
+                self.vpriv.completion_index = 0
             self.vpriv.completion_index = (self.vpriv.completion_index - 1) % num
-            await self.___redraw()
+            await self.ui.redraw()
 
     async def menu_next(self) -> None:
         async with self.vpriv.lock:
             if not self.vpriv.completions:
                 return
             num = len(self.vpriv.completions)
+            if self.vpriv.completion_index is None:
+                self.vpriv.completion_index = 0
             self.vpriv.completion_index = (self.vpriv.completion_index + 1) % num
-            await self.___redraw()
+            await self.ui.redraw()
 
     # ===============================================
-    # CURSOR (move_cursor_only_or_redraw)
+    # CURSOR 
     # ===============================================
     async def cursor_left(self) -> None:
         async with self.vpriv.lock:
@@ -275,7 +228,7 @@ class LineEditorLogic:
                 return
             self.vpriv.cursor -= 1
             self.internal.menu_hide
-            await self.___move_cursor_only_or_redraw()
+            await self.ui.move_cursor_only_or_redraw()
 
     async def cursor_right(self) -> None:
         async with self.vpriv.lock:
@@ -283,7 +236,7 @@ class LineEditorLogic:
                 return
             self.vpriv.cursor += 1
             self.internal.menu_hide
-            await self.___move_cursor_only_or_redraw()
+            await self.ui.move_cursor_only_or_redraw()
 
     async def cursor_word_left(self) -> None:
         async with self.vpriv.lock:
@@ -300,7 +253,7 @@ class LineEditorLogic:
 
 
             self.internal.menu_hide
-            await self.___move_cursor_only_or_redraw()
+            await self.ui.move_cursor_only_or_redraw()
 
     async def cursor_word_right(self) -> None:
         async with self.vpriv.lock:
@@ -317,7 +270,7 @@ class LineEditorLogic:
 
 
             self.internal.menu_hide
-            await self.___move_cursor_only_or_redraw()
+            await self.ui.move_cursor_only_or_redraw()
 
     async def cursor_home(self) -> None:
         async with self.vpriv.lock:
@@ -326,7 +279,7 @@ class LineEditorLogic:
             self.vpriv.cursor = 0
 
             self.internal.menu_hide
-            await self.___move_cursor_only_or_redraw()
+            await self.ui.move_cursor_only_or_redraw()
 
     async def cursor_end(self) -> None:
         async with self.vpriv.lock:
@@ -335,10 +288,10 @@ class LineEditorLogic:
             self.vpriv.cursor = len(self.vpriv.buffer)
 
             self.internal.menu_hide
-            await self.___move_cursor_only_or_redraw()
+            await self.ui.move_cursor_only_or_redraw()
 
     # ===============================================
-    # HISTORY (redraw)
+    # HISTORY 
     # ===============================================
     async def history_up(self) -> None:
         async with self.vpriv.lock:
@@ -354,7 +307,7 @@ class LineEditorLogic:
 
             self.vpriv.buffer = split_graphemes(prev)
             self.vpriv.cursor = len(self.vpriv.buffer)
-            await self.___redraw()
+            await self.ui.redraw()
 
     async def history_down(self) -> None:
         async with self.vpriv.lock:
@@ -374,18 +327,18 @@ class LineEditorLogic:
                 self.vpriv.history_draft = None
                 self.vpub.history.reset_index()
 
-                await self.___redraw()
+                await self.ui.redraw()
                 return
 
             self.vpriv.buffer = split_graphemes(nxt)
             self.vpriv.cursor = len(self.vpriv.buffer)
-            await self.___redraw()
+            await self.ui.redraw()
 
     async def history_search_backward(self) -> None:
         return
     
     # ===============================================
-    # DELETING (redraw, schedule_inline_hint)
+    # DELETING 
     # ===============================================
     async def char_left_del(self) -> None:
         async with self.vpriv.lock:
@@ -394,9 +347,9 @@ class LineEditorLogic:
             self.vpriv.cursor -= 1
             self.vpriv.buffer.pop(self.vpriv.cursor)
             self.internal.menu_hide
-            await self.___schedule_inline_hint()
+            self.lsp_adapter.schedule_inline_hint()
             self.vpriv.history_navigation_active = False
-            await self.___redraw()
+            await self.ui.redraw()
 
     async def char_right_del(self) -> None:
         async with self.vpriv.lock:
@@ -405,9 +358,9 @@ class LineEditorLogic:
             self.vpriv.buffer.pop(self.vpriv.cursor)
 
             self.internal.menu_hide
-            await self.___schedule_inline_hint()
+            self.lsp_adapter.schedule_inline_hint()
             self.vpriv.history_navigation_active = False
-            await self.___redraw()
+            await self.ui.redraw()
 
     async def word_left_del(self) -> None:
         async with self.vpriv.lock:
@@ -426,7 +379,7 @@ class LineEditorLogic:
 
             self.internal.menu_hide
             self.vpriv.history_navigation_active = False
-            await self.___redraw()
+            await self.ui.redraw()
 
     async def word_right_del(self) -> None:
         async with self.vpriv.lock:
@@ -443,7 +396,7 @@ class LineEditorLogic:
 
             self.internal.menu_hide
             self.vpriv.history_navigation_active = False
-            await self.___redraw()
+            await self.ui.redraw()
 
     async def home_del(self) -> None:
         async with self.vpriv.lock:
@@ -454,7 +407,7 @@ class LineEditorLogic:
 
             self.internal.menu_hide
             self.vpriv.history_navigation_active = False
-            await self.___redraw()
+            await self.ui.redraw()
 
     async def end_del(self) -> None:
         async with self.vpriv.lock:
@@ -464,7 +417,7 @@ class LineEditorLogic:
 
             self.internal.menu_hide
             self.vpriv.history_navigation_active = False
-            await self.___redraw()
+            await self.ui.redraw()
 
     # ===============================================
     # QUOTED INSERT
@@ -478,7 +431,7 @@ class LineEditorLogic:
     # ===============================================
     async def clear_screen(self) -> None:
         async with self.vpriv.lock:
-            await ui.clear_screen_and_redraw(self)
+            await self.ui.clear_screen_and_redraw(self)
 
     async def ctrlc_cancellation(self) -> str:
         async with self.vpriv.lock:

@@ -3,15 +3,20 @@
 import asyncio
 import logging
 from contextlib import suppress
+from typing import TYPE_CHECKING
 
 import asyncssh
 
-from ._input_handler import InputHandler
+from .input_handler import InputHandler
 from .output_handler import OutputHandler
 from .pty_handler import PTYHandler
 from sshserver.session.manager import get_current_session
 
 logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from sshserver.session.types import SessionInfo
+    from asyncssh import SSHServerProcess
 
 
 class Terminal:
@@ -21,7 +26,7 @@ class Terminal:
     """
 
     def __init__(self, process):
-        self.process = process
+        self.process: SSHServerProcess = process
 
         self.input_queue: asyncio.Queue[bytes | None] = asyncio.Queue()
         self.output_lock = asyncio.Lock()
@@ -31,8 +36,8 @@ class Terminal:
         self.pty = PTYHandler(self)
 
         self._input_task: asyncio.Task | None = None
-        self._running = False
-        self.session = None
+        self._running: bool = False
+        self.session: SessionInfo = None
 
     ########## Lifecycle ##########
     async def start(self):

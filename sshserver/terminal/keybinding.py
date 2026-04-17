@@ -1,9 +1,3 @@
-"""
-Performing silent refactor
-in testing
-"""
-
-
 import typing as t
 from .types import Key, KeyEvent
 

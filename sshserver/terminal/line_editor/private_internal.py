@@ -1,10 +1,6 @@
-"""
-Performing silent refactor
-in testing
-"""
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
-    from ._objects import LineEditorPrivateVars, LineEditorPublicVars
+    from .objects import LineEditorPrivateVars, LineEditorPublicVars
 
 class LineEditorPrivateInternal:
     def __init__(self, vpriv: LineEditorPrivateVars, vpub: LineEditorPublicVars):

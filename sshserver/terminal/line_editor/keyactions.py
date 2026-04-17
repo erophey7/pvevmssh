@@ -1,14 +1,8 @@
-"""
-Performing silent refactor
-in testing
-"""
-
 from typing import TYPE_CHECKING
-from dataclasses import dataclass
 
 if TYPE_CHECKING:
-    from ._private import LineEditorLogic
-    from ._objects import LineEditorPrivateVars, LineEditorPublicVars
+    from .private import LineEditorLogic
+    from .objects import LineEditorPrivateVars, LineEditorPublicVars
 
 class LineEditorKeyactions:
     def __init__(self, bg_logic: LineEditorLogic):
@@ -157,6 +151,7 @@ class LineEditorKeyactions:
             await self.bg.accept_inline_hint()
         else:
             await self.bg.tab_complete()
+            self.vpriv.completion_index = -1
             await self.bg.menu_request()
 
     async def key_esc(self) -> None:

@@ -1,7 +1,3 @@
-"""PS1 prompt expansion engine — полный bash-совместимый обработчик."""
-
-import socket
-import time
 import re
 
 from .types import PromptSegment
@@ -45,10 +41,7 @@ def expand_ps1(raw_ps1: str, session, env) -> str:
     return ps1
 
 
-def get_prompt_segments(terminal) -> list["PromptSegment"]:
-    r"""Парсит промпт → видимые + невидимые части (для line editor)."""
-
-    session = getattr(terminal, "session", None)
+def get_prompt_segments(session) -> list["PromptSegment"]:
     if not session:
         return [PromptSegment(">>> ", True)]
 

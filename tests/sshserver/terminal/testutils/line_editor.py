@@ -1,5 +1,5 @@
 from sshserver.terminal.line_editor.layout import build_layout
-from sshserver.terminal.line_editor.ui import get_prompt_segments
+from sshserver.terminal.line_editor.DELETING_ui import get_prompt_segments
 
 
 def get_editor_layout(editor):

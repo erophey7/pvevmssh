@@ -58,7 +58,7 @@ load_module("sshserver.terminal.mouse_handler", SSH_ROOT / "terminal" / "mouse_h
 load_package("sshserver.terminal.line_editor", SSH_ROOT / "terminal" / "line_editor")
 load_module("sshserver.terminal.input_handler", SSH_ROOT / "terminal" / "input_handler.py")
 
-from sshserver.terminal.input_handler import InputHandler
+from sshserver.terminal.DELETING_input_handler import InputHandler
 from sshserver.terminal.line_editor import LineEditor
 
 from tests.sshserver.terminal.testutils.fakes import (

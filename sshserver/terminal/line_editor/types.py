@@ -23,11 +23,11 @@ class Layout:
     index_to_pos: list[ScreenPos] = field(default_factory=list)
     cursor_pos: ScreenPos = field(default_factory=lambda: ScreenPos(0, 1))
     end_pos: ScreenPos = field(default_factory=lambda: ScreenPos(0, 1))
-    rendered_ansi: str = ""      # ← было rendered_text
+    rendered_ansi: str = ""
     pending_wrap: bool = False
     menu_ansi: str = ""
     menu_height: int = 0
-    menu_start_col: int = 1      # ← для позиционирования меню вправо
+    menu_start_col: int = 1
 
 
 __all__ = [

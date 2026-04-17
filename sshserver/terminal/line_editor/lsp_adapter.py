@@ -1,14 +1,19 @@
-import typing as t
 import asyncio
 import time
 
 from .text_utils import split_graphemes
-from . import ui
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .objects import LineEditorPrivateVars, LineEditorPublicVars
+    from .ui import LineEditorUI
+    from helpers.lsp.incode_connector import InCodeLSPConnector
 
 
 class LSPAdapter:
-    def __init__(self):
-        self.connector = None
+    def __init__(self, vpriv: LineEditorPrivateVars, vpub: LineEditorPublicVars, ui: LineEditorUI):
+        self.connector: InCodeLSPConnector = None
 
         self._completion_task: asyncio.Task | None = None
         self._inline_task: asyncio.Task | None = None
@@ -20,6 +25,10 @@ class LSPAdapter:
         self._last_tab = 0.0
         self._last_inline = 0.0
 
+        self.vpriv = vpriv
+        self.vpub = vpub
+        self.ui = ui
+
     # ======================================================
     # BIND
     # ======================================================
@@ -30,11 +39,8 @@ class LSPAdapter:
     # ======================================================
     # CONTEXT
     # ======================================================
-
-    def _context(self, editor):
-        buf = editor._buffer
-        c = editor._cursor
-
+    @staticmethod
+    def _context(buf, c):
         s = "".join(buf[:c])
 
         # найти последний пробел
@@ -57,7 +63,7 @@ class LSPAdapter:
     # TAB COMPLETION
     # ======================================================
 
-    async def tab_complete(self, editor):
+    async def tab_complete(self):
         if not self.connector:
             return
 
@@ -71,9 +77,7 @@ class LSPAdapter:
         self._request_id += 1
         req_id = self._request_id
 
-        start, partial, tokens = self._context(editor)
-        buf = editor._buffer
-        cursor = editor._cursor
+        _, partial, tokens = self._context(self.vpriv.buffer, self.vpriv.cursor)
 
         async def worker():
             try:
@@ -84,18 +88,23 @@ class LSPAdapter:
 
                 if not candidates:
                     return
+                
+                #for test
+                numered_candidates: list[str] = []
+                for i, n in enumerate(candidates):
+                    numered_candidates.append(f"{i} {n}")
 
                 # 👉 берём АКТУАЛЬНОЕ состояние после await
-                start2, partial2, _ = self._context(editor)
-                cursor2 = editor._cursor
-                buf2 = editor._buffer
+                start2, partial2, _ = self._context(self.vpriv.buffer, self.vpriv.cursor)
+                cursor2 = self.vpriv.cursor
+                buf2 = self.vpriv.buffer
 
                 # ==================================================
                 # ❗ НЕЛЬЗЯ автодополнять если partial пустой
                 # ==================================================
                 if not partial2:
-                    editor._completions = candidates
-                    editor._awaiting_menu = True
+                    self.vpriv.completions = candidates
+                    self.vpriv.awaiting_menu = True
                     return
 
                 # ==================================================
@@ -113,16 +122,16 @@ class LSPAdapter:
                     if full != partial2:
                         ins = split_graphemes(full)
                         buf2[start2:cursor2] = ins
-                        editor._cursor = start2 + len(ins)
-                        await ui.redraw(editor)
+                        self.vpriv.cursor = start2 + len(ins)
+                        await self.ui.redraw()
 
                     return
 
                 # ==================================================
                 # MULTIPLE MATCHES → ТОЛЬКО МЕНЮ
                 # ==================================================
-                editor._completions = candidates
-                editor._awaiting_menu = True
+                self.vpriv.completions = candidates
+                self.vpriv.awaiting_menu = True
 
             except asyncio.CancelledError:
                 pass
@@ -133,7 +142,7 @@ class LSPAdapter:
     # INLINE HINT
     # ======================================================
 
-    def schedule_inline_hint(self, editor):
+    def schedule_inline_hint(self):
         if not self.connector:
             return
 
@@ -147,7 +156,7 @@ class LSPAdapter:
         self._inline_request_id += 1
         req_id = self._inline_request_id
 
-        start, partial, tokens = self._context(editor)
+        _, partial, tokens = self._context(self.vpriv.buffer, self.vpriv.cursor)
 
         async def worker():
             try:
@@ -159,13 +168,13 @@ class LSPAdapter:
                 if len(candidates) == 1:
                     full = candidates[0]
                     if full.startswith(partial):
-                        editor._inline_hint = full[len(partial):]
+                        self.vpriv.inline_hint = full[len(partial):]
                     else:
-                        editor._inline_hint = None
+                        self.vpriv.inline_hint = None
                 else:
-                    editor._inline_hint = None
+                    self.vpriv.inline_hint = None
 
-                await ui.redraw(editor)
+                await self.ui.redraw()
 
             except asyncio.CancelledError:
                 pass
@@ -175,20 +184,20 @@ class LSPAdapter:
     # =======================================================
     # MENU ACCEPT
     # =======================================================
-    async def menu_accept(self, editor) -> None:
+    async def menu_accept(self) -> None:
         if not self.connector:
             return
 
         # защита от пустого состояния
-        if not editor._completions or editor._completion_index is None:
+        if not self.vpriv.completions or self.vpriv.completion_index is None:
             return
 
-        selected = editor._completions[editor._completion_index]
+        selected = self.vpriv.completions[self.vpriv.completion_index]
 
-        start, partial, _ = self._context(editor)
+        start, partial, _ = self._context(self.vpriv.buffer, self.vpriv.cursor)
 
-        buf = editor._buffer
-        cursor = editor._cursor
+        buf = self.vpriv.buffer
+        cursor = self.vpriv.cursor
 
         if start > cursor:
             start = cursor
@@ -196,15 +205,15 @@ class LSPAdapter:
         replacement = split_graphemes(selected)
 
         buf[start:cursor] = replacement
-        editor._cursor = start + len(replacement)
+        self.vpriv.cursor = start + len(replacement)
 
-        editor._completions = None
-        editor._completion_index = None
-        editor._inline_hint = None
-        editor._awaiting_menu = False
-        editor._history_navigation_active = False
+        self.vpriv.completions = None
+        self.vpriv.completion_index = 0
+        self.vpriv.inline_hint = None
+        self.vpriv.awaiting_menu = False
+        self.vpriv.history_navigation_active = False
 
-        await ui.redraw(editor)
+        await self.ui.redraw()
     # ======================================================
     # UTIL
     # ======================================================

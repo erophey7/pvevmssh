@@ -140,3 +140,30 @@ def build_layout(
         menu_height=menu_height,
         menu_start_col=menu_start_col,
     )
+
+def compute_completion_grid_dims(
+    completions: list[str],
+    term_width: int,
+    term_height: int,
+    start_row: int,
+    start_col: int = 1,
+) -> tuple[int, int]:
+    """
+    Returns:
+        num_rows, num_cols
+    """
+
+    if not completions:
+        return 0, 0
+
+    max_len = max(len(c) for c in completions) + 3
+
+    available_width = term_width - (start_col - 1)
+    num_cols = max(1, available_width // max_len)
+
+    max_rows = max(1, term_height - start_row - 1)
+
+    num_rows_calc = (len(completions) + num_cols - 1) // num_cols
+    num_rows = min(num_rows_calc, max_rows)
+
+    return num_rows, num_cols
