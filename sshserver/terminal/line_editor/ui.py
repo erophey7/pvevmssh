@@ -52,7 +52,9 @@ class LineEditorUI:
                 if i < len(lines) - 1:
                     out += b"\r\n"
 
-        extra = layout.menu_height if layout.menu_ansi else 0
+        _, menu_height = layout.menu_grid 
+
+        extra = menu_height if layout.menu_ansi else 0
         rows_up = layout.end_pos.row - layout.cursor_pos.row + extra
 
         if rows_up > 0:

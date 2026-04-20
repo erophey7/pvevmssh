@@ -26,8 +26,8 @@ class Layout:
     rendered_ansi: str = ""
     pending_wrap: bool = False
     menu_ansi: str = ""
-    menu_height: int = 0
     menu_start_col: int = 1
+    menu_grid: tuple[int, int] = (0, 0)
 
 
 __all__ = [

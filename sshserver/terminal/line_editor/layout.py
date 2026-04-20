@@ -98,8 +98,8 @@ def build_layout(
 
     # ==================== МЕНЮ ====================
     menu_ansi = ""
-    menu_height = 0
     menu_start_col = 1
+    menu_grid = (0, 0)
 
     if completions and completion_index is not None and len(completions) > 1:
         max_len = max(len(cand) for cand in completions) + 3
@@ -127,7 +127,9 @@ def build_layout(
                     line_parts.append(" " * (max_len - 2))
             menu_lines.append("".join(line_parts))
         menu_ansi = "\r\n".join(menu_lines)
-        menu_height = len(menu_lines)
+        menu_rows = len(menu_lines)
+
+        menu_grid = (num_cols, menu_rows)
 
     return Layout(
         rows=rows,
@@ -137,8 +139,8 @@ def build_layout(
         rendered_ansi=input_ansi,
         pending_wrap=pending_wrap,
         menu_ansi=menu_ansi,
-        menu_height=menu_height,
         menu_start_col=menu_start_col,
+        menu_grid=menu_grid,
     )
 
 def compute_completion_grid_dims(

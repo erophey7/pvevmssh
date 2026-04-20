@@ -177,27 +177,70 @@ class LineEditorLogic:
         async with self.vpriv.lock:
             if not self.vpriv.completions:
                 return
-            cols = self.internal.get_menu_columns()
+            if self.vpriv.last_layout is None:
+                return
+            cols, _ = self.vpriv.last_layout.menu_grid
             num = len(self.vpriv.completions)
-            logger.debug(f"Before menu up: cols={cols} | num={num} | completion_index={self.vpriv.completion_index}")
+
             if self.vpriv.completion_index is None:
                 self.vpriv.completion_index = 0
-            self.vpriv.completion_index = (self.vpriv.completion_index - cols) % num
+
+            idx = self.vpriv.completion_index
+            col = idx % cols
+
+            prev_idx = idx - cols
+
+            if prev_idx >= 0:
+                self.vpriv.completion_index = prev_idx
+            else:
+                # переходим в предыдущую колонку
+                prev_col = col - 1
+
+                if prev_col >= 0:
+                    # последний элемент в этой колонке
+                    self.vpriv.completion_index = (
+                        prev_col + cols * ((num - 1 - prev_col) // cols)
+                    )
+                else:
+                    # если были в первой колонке → в конец
+                    last_col = cols - 1
+                    self.vpriv.completion_index = (
+                        last_col + cols * ((num - 1 - last_col) // cols)
+                    )
+
             await self.ui.redraw()
-            logger.debug(f"After menu up: cols={cols} | num={num} | completion_index={self.vpriv.completion_index}")
 
     async def menu_down(self) -> None:
         async with self.vpriv.lock:
             if not self.vpriv.completions:
                 return
-            cols = self.internal.get_menu_columns()
+
+            if self.vpriv.last_layout is None:
+                return
+            cols, _ = self.vpriv.last_layout.menu_grid
             num = len(self.vpriv.completions)
-            logger.debug(f"Before menu down: cols={cols} | num={num} | completion_index={self.vpriv.completion_index}")
+
             if self.vpriv.completion_index is None:
                 self.vpriv.completion_index = 0
-            self.vpriv.completion_index = (self.vpriv.completion_index + cols) % num
+
+            idx = self.vpriv.completion_index
+            col = idx % cols
+
+            # шаг вниз внутри колонки
+            next_idx = idx + cols
+
+            if next_idx < num:
+                self.vpriv.completion_index = next_idx
+            else:
+                # переход на следующую колонку
+                next_col = col + 1
+                if next_col < cols:
+                    self.vpriv.completion_index = next_col
+                else:
+                    # если были в последней колонке → в начало
+                    self.vpriv.completion_index = 0
+
             await self.ui.redraw()
-            logger.debug(f"After menu down: cols={cols} | num={num} | completion_index={self.vpriv.completion_index}")
 
     async def menu_prev(self) -> None:
         async with self.vpriv.lock:
@@ -437,6 +480,7 @@ class LineEditorLogic:
         async with self.vpriv.lock:
             self.internal.reset_state()
             await self.vpub.terminal.output.output_bytes(b"^C\r\n")
+            #await self.ui.redraw()
             return ""
         
     async def ctrld_exiting(self) -> Optional[str]:

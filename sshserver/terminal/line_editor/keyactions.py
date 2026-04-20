@@ -3,6 +3,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from .private import LineEditorLogic
     from .objects import LineEditorPrivateVars, LineEditorPublicVars
+    from typing import Optional
 
 class LineEditorKeyactions:
     def __init__(self, bg_logic: LineEditorLogic):
@@ -151,7 +152,6 @@ class LineEditorKeyactions:
             await self.bg.accept_inline_hint()
         else:
             await self.bg.tab_complete()
-            self.vpriv.completion_index = -1
             await self.bg.menu_request()
 
     async def key_esc(self) -> None:
@@ -167,5 +167,5 @@ class LineEditorKeyactions:
     async def keys_ctrl_c(self) -> str:
         return await self.bg.ctrlc_cancellation()
 
-    async def keys_ctrl_d(self) -> None:
+    async def keys_ctrl_d(self) -> Optional[str]:
         return await self.bg.ctrld_exiting()

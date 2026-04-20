@@ -11,12 +11,61 @@ if TYPE_CHECKING:
     from helpers.lsp.incode_connector import InCodeLSPConnector
 
 
+# ======================================================
+# LSP REQUEST MANAGER
+# ======================================================
+
+class LSPRequestManager:
+    def __init__(self, connector):
+        self.connector = connector
+
+        self._task: asyncio.Task | None = None
+        self._key = None
+        self._result = None
+
+        self._lock = asyncio.Lock()
+
+    def _make_key(self, buffer, cursor, partial):
+        return (tuple(buffer), cursor, partial)
+
+    async def request(self, buffer, cursor, partial, tokens, wait: bool = False):
+        key = self._make_key(buffer, cursor, partial)
+
+        # cached result
+        if self._key == key and self._result is not None:
+            return self._result
+
+        # reuse in-flight task
+        if self._task and not self._task.done() and self._key == key:
+            return await self._task
+
+        async with self._lock:
+            if self._task and not self._task.done() and self._key == key:
+                return await self._task
+
+            async def worker():
+                res = await self.connector.completion(partial, tokens)
+                self._key = key
+                self._result = res
+                return res
+
+            self._task = asyncio.create_task(worker())
+
+            if wait:
+                return await self._task
+
+            return await self._task
+
+
+# ======================================================
+# ADAPTER
+# ======================================================
+
 class LSPAdapter:
     def __init__(self, vpriv: LineEditorPrivateVars, vpub: LineEditorPublicVars, ui: LineEditorUI):
         self.connector: InCodeLSPConnector = None
 
-        self._completion_task: asyncio.Task | None = None
-        self._inline_task: asyncio.Task | None = None
+        self.lsp: LSPRequestManager | None = None
 
         self._request_id = 0
         self._inline_request_id = 0
@@ -35,24 +84,23 @@ class LSPAdapter:
 
     def set_engine(self, connector):
         self.connector = connector
+        self.lsp = LSPRequestManager(connector)
 
     # ======================================================
     # CONTEXT
     # ======================================================
+
     @staticmethod
     def _context(buf, c):
         s = "".join(buf[:c])
 
-        # найти последний пробел
         last_space = s.rfind(" ")
 
         if last_space == -1:
-            # вводится команда
             tokens = []
             partial = s
             start = 0
         else:
-            # есть команда + аргументы
             tokens = s[:last_space].split()
             partial = s[last_space + 1:]
             start = last_space + 1
@@ -64,137 +112,108 @@ class LSPAdapter:
     # ======================================================
 
     async def tab_complete(self):
-        if not self.connector:
+        if not self.lsp:
             return
 
         if time.monotonic() - self._last_tab < self._debounce:
             return
         self._last_tab = time.monotonic()
 
-        if self._completion_task and not self._completion_task.done():
-            self._completion_task.cancel()
-
-        self._request_id += 1
-        req_id = self._request_id
-
         _, partial, tokens = self._context(self.vpriv.buffer, self.vpriv.cursor)
 
-        async def worker():
-            try:
-                candidates = await self.connector.completion(partial, tokens)
+        start, _, _ = self._context(self.vpriv.buffer, self.vpriv.cursor)
 
-                if req_id != self._request_id:
-                    return
+        buf = self.vpriv.buffer
+        cursor = self.vpriv.cursor
 
-                if not candidates:
-                    return
-                
-                #for test
-                numered_candidates: list[str] = []
-                for i, n in enumerate(candidates):
-                    numered_candidates.append(f"{i} {n}")
+        candidates = await self.lsp.request(
+            buf,
+            cursor,
+            partial,
+            tokens,
+            wait=True
+        )
 
-                # 👉 берём АКТУАЛЬНОЕ состояние после await
-                start2, partial2, _ = self._context(self.vpriv.buffer, self.vpriv.cursor)
-                cursor2 = self.vpriv.cursor
-                buf2 = self.vpriv.buffer
+        if not candidates:
+            return
 
-                # ==================================================
-                # ❗ НЕЛЬЗЯ автодополнять если partial пустой
-                # ==================================================
-                if not partial2:
-                    self.vpriv.completions = candidates
-                    self.vpriv.awaiting_menu = True
-                    return
+        # empty partial → show menu only
+        if partial == "":
+            self.vpriv.completions = candidates
+            self.vpriv.awaiting_menu = True
+            return
 
-                # ==================================================
-                # ФИЛЬТРУЕМ кандидатов по partial
-                # ==================================================
-                matches = [c for c in candidates if c.startswith(partial2)]
+        matches = [c for c in candidates if c.startswith(partial)]
 
-                # ==================================================
-                # SINGLE MATCH → REPLACE
-                # ==================================================
-                if len(matches) == 1:
-                    full = matches[0]
+        if len(matches) == 1:
+            full = matches[0]
 
-                    # защита от лишней перезаписи
-                    if full != partial2:
-                        ins = split_graphemes(full)
-                        buf2[start2:cursor2] = ins
-                        self.vpriv.cursor = start2 + len(ins)
-                        await self.ui.redraw()
+            if full != partial:
+                ins = split_graphemes(full)
+                buf[start:cursor] = ins
+                self.vpriv.cursor = start + len(ins)
+                await self.ui.redraw()
+            return
 
-                    return
-
-                # ==================================================
-                # MULTIPLE MATCHES → ТОЛЬКО МЕНЮ
-                # ==================================================
-                self.vpriv.completions = candidates
-                self.vpriv.awaiting_menu = True
-
-            except asyncio.CancelledError:
-                pass
-
-        self._completion_task = asyncio.create_task(worker())
+        self.vpriv.completions = candidates
+        self.vpriv.awaiting_menu = True
 
     # ======================================================
     # INLINE HINT
     # ======================================================
 
     def schedule_inline_hint(self):
-        if not self.connector:
+        if not self.lsp:
             return
 
-        if time.monotonic() - self._last_inline < self._debounce:
-            return
-        self._last_inline = time.monotonic()
-
-        if self._inline_task and not self._inline_task.done():
-            self._inline_task.cancel()
-
-        self._inline_request_id += 1
-        req_id = self._inline_request_id
-
-        _, partial, tokens = self._context(self.vpriv.buffer, self.vpriv.cursor)
+        gen = self.vpriv.lsp_generation
 
         async def worker():
-            try:
-                candidates = await self.connector.completion(partial, tokens)
+            start, partial, tokens = self._context(
+                self.vpriv.buffer,
+                self.vpriv.cursor
+            )
 
-                if req_id != self._inline_request_id:
-                    return
+            candidates = await self.lsp.request(
+                self.vpriv.buffer,
+                self.vpriv.cursor,
+                partial,
+                tokens,
+                wait=False
+            )
 
-                if len(candidates) == 1:
-                    full = candidates[0]
-                    if full.startswith(partial):
-                        self.vpriv.inline_hint = full[len(partial):]
-                    else:
-                        self.vpriv.inline_hint = None
+            if gen != self.vpriv.lsp_generation:
+                return
+
+            if len(candidates) == 1:
+                full = candidates[0]
+                if full.startswith(partial):
+                    hint = full[len(partial):]
                 else:
-                    self.vpriv.inline_hint = None
+                    hint = None
+            else:
+                hint = None
 
-                await self.ui.redraw()
+            # ещё один stale guard перед UI
+            if gen != self.vpriv.lsp_generation:
+                return
 
-            except asyncio.CancelledError:
-                pass
+            self.vpriv.inline_hint = hint
+            await self.ui.redraw()
 
-        self._inline_task = asyncio.create_task(worker())
+        asyncio.create_task(worker())
 
-    # =======================================================
+    # ======================================================
     # MENU ACCEPT
-    # =======================================================
-    async def menu_accept(self) -> None:
-        if not self.connector:
-            return
+    # ======================================================
 
-        # защита от пустого состояния
+    async def menu_accept(self) -> None:
         if not self.vpriv.completions or self.vpriv.completion_index is None:
             return
 
         selected = self.vpriv.completions[self.vpriv.completion_index]
 
-        start, partial, _ = self._context(self.vpriv.buffer, self.vpriv.cursor)
+        start, _, _ = self._context(self.vpriv.buffer, self.vpriv.cursor)
 
         buf = self.vpriv.buffer
         cursor = self.vpriv.cursor
@@ -214,6 +233,7 @@ class LSPAdapter:
         self.vpriv.history_navigation_active = False
 
         await self.ui.redraw()
+
     # ======================================================
     # UTIL
     # ======================================================
@@ -222,10 +242,12 @@ class LSPAdapter:
     def _common_prefix(words):
         if not words:
             return ""
+
         p = words[0]
         for w in words[1:]:
             i = 0
             while i < len(p) and i < len(w) and p[i] == w[i]:
                 i += 1
             p = p[:i]
+
         return p

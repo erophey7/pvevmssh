@@ -35,3 +35,4 @@ class LineEditorPrivateVars:
         self.awaiting_menu: bool = False
 
         self.inline_hint: str | None = None
+        self.lsp_generation: int = 0
