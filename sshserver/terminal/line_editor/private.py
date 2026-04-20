@@ -270,7 +270,7 @@ class LineEditorLogic:
             if self.vpriv.cursor <= 0:
                 return
             self.vpriv.cursor -= 1
-            self.internal.menu_hide
+            self.internal.menu_hide()
             await self.ui.move_cursor_only_or_redraw()
 
     async def cursor_right(self) -> None:
@@ -278,7 +278,7 @@ class LineEditorLogic:
             if self.vpriv.cursor >= len(self.vpriv.buffer):
                 return
             self.vpriv.cursor += 1
-            self.internal.menu_hide
+            self.internal.menu_hide()
             await self.ui.move_cursor_only_or_redraw()
 
     async def cursor_word_left(self) -> None:
@@ -295,7 +295,7 @@ class LineEditorLogic:
                     self.vpriv.cursor -= 1
 
 
-            self.internal.menu_hide
+            self.internal.menu_hide()
             await self.ui.move_cursor_only_or_redraw()
 
     async def cursor_word_right(self) -> None:
@@ -312,7 +312,7 @@ class LineEditorLogic:
                     self.vpriv.cursor += 1
 
 
-            self.internal.menu_hide
+            self.internal.menu_hide()
             await self.ui.move_cursor_only_or_redraw()
 
     async def cursor_home(self) -> None:
@@ -321,7 +321,7 @@ class LineEditorLogic:
                 return
             self.vpriv.cursor = 0
 
-            self.internal.menu_hide
+            self.internal.menu_hide()
             await self.ui.move_cursor_only_or_redraw()
 
     async def cursor_end(self) -> None:
@@ -330,7 +330,7 @@ class LineEditorLogic:
                 return
             self.vpriv.cursor = len(self.vpriv.buffer)
 
-            self.internal.menu_hide
+            self.internal.menu_hide()
             await self.ui.move_cursor_only_or_redraw()
 
     # ===============================================
@@ -342,7 +342,7 @@ class LineEditorLogic:
                 self.vpriv.history_draft = self.vpriv.buffer.copy()
                 self.vpriv.history_navigation_active = True
 
-            self.internal.menu_hide
+            self.internal.menu_hide()
 
             prev = self.vpub.history.previous()
             if prev is None:
@@ -357,7 +357,7 @@ class LineEditorLogic:
             if not self.vpriv.history_navigation_active:
                 return
 
-            self.internal.menu_hide
+            self.internal.menu_hide()
 
             nxt = self.vpub.history.next()
 
@@ -389,7 +389,7 @@ class LineEditorLogic:
                 return
             self.vpriv.cursor -= 1
             self.vpriv.buffer.pop(self.vpriv.cursor)
-            self.internal.menu_hide
+            self.internal.menu_hide()
             self.lsp_adapter.schedule_inline_hint()
             self.vpriv.history_navigation_active = False
             await self.ui.redraw()
@@ -400,7 +400,7 @@ class LineEditorLogic:
                 return
             self.vpriv.buffer.pop(self.vpriv.cursor)
 
-            self.internal.menu_hide
+            self.internal.menu_hide()
             self.lsp_adapter.schedule_inline_hint()
             self.vpriv.history_navigation_active = False
             await self.ui.redraw()
@@ -420,7 +420,7 @@ class LineEditorLogic:
                     self.vpriv.cursor -= 1
                     self.vpriv.buffer.pop(self.vpriv.cursor)
 
-            self.internal.menu_hide
+            self.internal.menu_hide()
             self.vpriv.history_navigation_active = False
             await self.ui.redraw()
 
@@ -437,7 +437,7 @@ class LineEditorLogic:
                 while self.vpriv.cursor < len(self.vpriv.buffer) and char_class(self.vpriv.buffer[self.vpriv.cursor]) == cls:
                     self.vpriv.buffer.pop(self.vpriv.cursor)
 
-            self.internal.menu_hide
+            self.internal.menu_hide()
             self.vpriv.history_navigation_active = False
             await self.ui.redraw()
 
@@ -448,7 +448,7 @@ class LineEditorLogic:
             del self.vpriv.buffer[:self.vpriv.cursor]
             self.vpriv.cursor = 0
 
-            self.internal.menu_hide
+            self.internal.menu_hide()
             self.vpriv.history_navigation_active = False
             await self.ui.redraw()
 
@@ -458,7 +458,7 @@ class LineEditorLogic:
                 return
             del self.vpriv.buffer[self.vpriv.cursor:]
 
-            self.internal.menu_hide
+            self.internal.menu_hide()
             self.vpriv.history_navigation_active = False
             await self.ui.redraw()
 
@@ -479,8 +479,8 @@ class LineEditorLogic:
     async def ctrlc_cancellation(self) -> str:
         async with self.vpriv.lock:
             self.internal.reset_state()
+            await self.ui.redraw()
             await self.vpub.terminal.output.output_bytes(b"^C\r\n")
-            #await self.ui.redraw()
             return ""
         
     async def ctrld_exiting(self) -> Optional[str]:

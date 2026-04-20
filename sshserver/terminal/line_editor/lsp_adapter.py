@@ -1,5 +1,6 @@
 import asyncio
 import time
+from collections import OrderedDict
 
 from .text_utils import split_graphemes
 
@@ -16,26 +17,81 @@ if TYPE_CHECKING:
 # ======================================================
 
 class LSPRequestManager:
-    def __init__(self, connector):
+    def __init__(self, connector, max_cache=32, ttl=5.0):
         self.connector = connector
 
         self._task: asyncio.Task | None = None
         self._key = None
-        self._result = None
 
         self._lock = asyncio.Lock()
+
+        # cache: key -> (timestamp, result)
+        self._cache = OrderedDict()
+        self._max_cache = max_cache
+        self._ttl = ttl
+
+    # -------------------------
+    # CACHE HELPERS
+    # -------------------------
+
+    def clear_cache(self):
+        self._cache.clear()
+        self._task = None
+        self._key = None
 
     def _make_key(self, buffer, cursor, partial):
         return (tuple(buffer), cursor, partial)
 
-    async def request(self, buffer, cursor, partial, tokens, wait: bool = False):
+    def _get_cached(self, key):
+        now = time.monotonic()
+
+        item = self._cache.get(key)
+        if not item:
+            return None
+
+        ts, value = item
+
+        if now - ts > self._ttl:
+            del self._cache[key]
+            return None
+
+        self._cache.move_to_end(key)
+        return value
+
+    def _store_cache(self, key, value):
+        self._cache[key] = (time.monotonic(), value)
+        self._cache.move_to_end(key)
+
+        if len(self._cache) > self._max_cache:
+            self._cache.popitem(last=False)
+
+    def _prefix_match(self, partial):
+        for (buf, cur, old_partial), (ts, result) in reversed(self._cache.items()):
+            if result and partial.startswith(old_partial):
+                return [c for c in result if c.startswith(partial)]
+        return None
+
+    # -------------------------
+    # MAIN REQUEST
+    # -------------------------
+
+    async def request(self, buffer, cursor, partial, tokens, wait=False):
         key = self._make_key(buffer, cursor, partial)
 
-        # cached result
-        if self._key == key and self._result is not None:
-            return self._result
+        if partial == "":
+            self.clear_cache()
 
-        # reuse in-flight task
+        # 1. exact cache
+        cached = self._get_cached(key)
+        if cached is not None:
+            return cached
+
+        # 2. prefix reuse
+        reused = self._prefix_match(partial)
+        if reused:
+            return reused
+
+        # 3. in-flight reuse
         if self._task and not self._task.done() and self._key == key:
             return await self._task
 
@@ -45,14 +101,11 @@ class LSPRequestManager:
 
             async def worker():
                 res = await self.connector.completion(partial, tokens)
-                self._key = key
-                self._result = res
+                self._store_cache(key, res)
                 return res
 
+            self._key = key
             self._task = asyncio.create_task(worker())
-
-            if wait:
-                return await self._task
 
             return await self._task
 
@@ -64,7 +117,6 @@ class LSPRequestManager:
 class LSPAdapter:
     def __init__(self, vpriv: LineEditorPrivateVars, vpub: LineEditorPublicVars, ui: LineEditorUI):
         self.connector: InCodeLSPConnector = None
-
         self.lsp: LSPRequestManager | None = None
 
         self._request_id = 0
@@ -119,16 +171,11 @@ class LSPAdapter:
             return
         self._last_tab = time.monotonic()
 
-        _, partial, tokens = self._context(self.vpriv.buffer, self.vpriv.cursor)
-
-        start, _, _ = self._context(self.vpriv.buffer, self.vpriv.cursor)
-
-        buf = self.vpriv.buffer
-        cursor = self.vpriv.cursor
+        start, partial, tokens = self._context(self.vpriv.buffer, self.vpriv.cursor)
 
         candidates = await self.lsp.request(
-            buf,
-            cursor,
+            self.vpriv.buffer,
+            self.vpriv.cursor,
             partial,
             tokens,
             wait=True
@@ -137,7 +184,6 @@ class LSPAdapter:
         if not candidates:
             return
 
-        # empty partial → show menu only
         if partial == "":
             self.vpriv.completions = candidates
             self.vpriv.awaiting_menu = True
@@ -150,7 +196,7 @@ class LSPAdapter:
 
             if full != partial:
                 ins = split_graphemes(full)
-                buf[start:cursor] = ins
+                self.vpriv.buffer[start:self.vpriv.cursor] = ins
                 self.vpriv.cursor = start + len(ins)
                 await self.ui.redraw()
             return
@@ -185,16 +231,11 @@ class LSPAdapter:
             if gen != self.vpriv.lsp_generation:
                 return
 
-            if len(candidates) == 1:
-                full = candidates[0]
-                if full.startswith(partial):
-                    hint = full[len(partial):]
-                else:
-                    hint = None
+            if len(candidates) == 1 and candidates[0].startswith(partial):
+                hint = candidates[0][len(partial):]
             else:
                 hint = None
 
-            # ещё один stale guard перед UI
             if gen != self.vpriv.lsp_generation:
                 return
 
@@ -207,7 +248,7 @@ class LSPAdapter:
     # MENU ACCEPT
     # ======================================================
 
-    async def menu_accept(self) -> None:
+    async def menu_accept(self):
         if not self.vpriv.completions or self.vpriv.completion_index is None:
             return
 
@@ -215,16 +256,8 @@ class LSPAdapter:
 
         start, _, _ = self._context(self.vpriv.buffer, self.vpriv.cursor)
 
-        buf = self.vpriv.buffer
-        cursor = self.vpriv.cursor
-
-        if start > cursor:
-            start = cursor
-
-        replacement = split_graphemes(selected)
-
-        buf[start:cursor] = replacement
-        self.vpriv.cursor = start + len(replacement)
+        self.vpriv.buffer[start:self.vpriv.cursor] = split_graphemes(selected)
+        self.vpriv.cursor = start + len(split_graphemes(selected))
 
         self.vpriv.completions = None
         self.vpriv.completion_index = 0
