@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from .objects import LineEditorPrivateVars, LineEditorPublicVars
     from .ui import LineEditorUI
     from helpers.lsp.incode_connector import InCodeLSPConnector
+    from .types import SyntaxToken
 
 
 # ======================================================
@@ -130,7 +131,7 @@ class LSPAdapter:
         self._last_inline = 0.0
         self._last_semantic = 0.0
 
-        self._semantic_cache: dict[tuple[str, ...], list[str]] = {}
+        self._semantic_cache: dict[tuple[str, ...], list[SyntaxToken]] = {}
 
         self.vpriv = vpriv
         self.vpub = vpub
@@ -191,23 +192,21 @@ class LSPAdapter:
                 if gen != self.vpriv.lsp_generation:
                     return
 
-                styles = result.get("styles") or result.get("tokens") or []
-                if len(styles) != len(self.vpriv.buffer):
-                    styles = ["SYNTAX_DEFAULT"] * len(self.vpriv.buffer)
+                tokens = result.get("tokens") or []
+                if not isinstance(tokens, list):
+                    tokens = []
 
-                self._semantic_cache[buffer_key] = styles
-                if len(self._semantic_cache) > 32:   
+                self._semantic_cache[buffer_key] = tokens
+                if len(self._semantic_cache) > 32:
                     self._semantic_cache.pop(next(iter(self._semantic_cache)))
 
-                self.vpriv.semantic_styles = styles
+                self.vpriv.semantic_tokens = tokens  
 
             except Exception:
-                self.vpriv.semantic_styles = None
+                self.vpriv.semantic_tokens = None
 
             if gen == self.vpriv.lsp_generation:
                 await self.ui.redraw()
-
-            logger.debug(self.vpriv.semantic_styles)
 
         asyncio.create_task(worker())
 

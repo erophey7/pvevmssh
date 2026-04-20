@@ -5,7 +5,7 @@ if TYPE_CHECKING:
     from sshserver.session.history import CommandHistory
     from sshserver.terminal import Terminal
     from sshserver.session.syntax_highlight import StyleContext
-    from .types import Layout
+    from .types import Layout, SyntaxToken
     from sshserver.session.types import PromptSegment
 
 class LineEditorPublicVars:
@@ -37,4 +37,4 @@ class LineEditorPrivateVars:
         self.inline_hint: str | None = None
         self.lsp_generation: int = 0
 
-        self.semantic_styles: list[str] | None = None
+        self.semantic_tokens: list["SyntaxToken"] | None = None

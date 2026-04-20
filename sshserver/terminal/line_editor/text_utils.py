@@ -4,6 +4,7 @@ from wcwidth import wcswidth
 
 if t.TYPE_CHECKING:
     from sshserver.session.syntax_highlight import StyleContext
+    from .types import SyntaxToken
 
 import logging
 logger = logging.getLogger(__name__)
@@ -31,11 +32,12 @@ def get_style(style_ctx: StyleContext, key: str) -> str:
 def highlight_buffer(
     buffer: list[str],
     style_ctx: StyleContext,
-    semantic_styles: list[str] | None = None,
+    semantic_tokens: list[SyntaxToken] | None = None,
 ) -> list[tuple[str, str]]:
     if not buffer:
         return []
 
+    # 1. Базовая подсветка (логическими токенами, как было раньше)
     styled: list[tuple[str, str]] = []
     i = 0
     n = len(buffer)
@@ -100,10 +102,14 @@ def highlight_buffer(
                 styled.append((chh, style_ctx.get("SYNTAX_KEY")))
             styled.append((sep, style_ctx.get("SYNTAX_OPERATOR")))
             val_style = style_ctx.get("SYNTAX_DEFAULT")
-            if value.isdigit(): val_style = style_ctx.get("SYNTAX_NUMBER")
-            elif value.lower() in ("true", "false"): val_style = style_ctx.get("SYNTAX_BOOL")
-            elif value.lower() in ("null", "none"): val_style = style_ctx.get("SYNTAX_NULL")
-            elif "/" in value or value.startswith("."): val_style = style_ctx.get("SYNTAX_PATH")
+            if value.isdigit():
+                val_style = style_ctx.get("SYNTAX_NUMBER")
+            elif value.lower() in ("true", "false"):
+                val_style = style_ctx.get("SYNTAX_BOOL")
+            elif value.lower() in ("null", "none"):
+                val_style = style_ctx.get("SYNTAX_NULL")
+            elif "/" in value or value.startswith("."):
+                val_style = style_ctx.get("SYNTAX_PATH")
             for chh in value:
                 styled.append((chh, val_style))
             continue
@@ -121,39 +127,39 @@ def highlight_buffer(
         for chh in token:
             styled.append((chh, style_ctx.get(style)))
 
-    if semantic_styles and len(semantic_styles) == len(buffer):
-        logger.debug("semantic ast started")
-        final: list[tuple[str, str]] = []
+    # 2. Накладываем семантику (span-based)
+    if not semantic_tokens or not isinstance(semantic_tokens, list) or len(semantic_tokens) == 0:
+        return styled
 
-        PROTECTED = {
-            style_ctx.get("SYNTAX_STRING"),
-            style_ctx.get("SYNTAX_COMMENT"),
-        }
+    final: list[tuple[str, str]] = []
+    PROTECTED = {
+        style_ctx.get("SYNTAX_STRING"),
+        style_ctx.get("SYNTAX_COMMENT"),
+    }
 
-        for i in range(len(buffer)):
-            ch = buffer[i]
-            sem = semantic_styles[i]
+    sem_idx = 0
+    num_sem = len(semantic_tokens)
 
-            base_style = styled[i][1] if i < len(styled) else style_ctx.get("SYNTAX_DEFAULT")
-            if base_style in PROTECTED:
-                final.append((ch, base_style))
-                continue
+    for pos in range(len(buffer)):
+        ch, base_style = styled[pos]
 
-            if not sem or sem == "SYNTAX_DEFAULT":
-                final.append((ch, base_style))
-                continue
+        # продвигаем указатель на актуальный спан
+        while sem_idx < num_sem and semantic_tokens[sem_idx].start + semantic_tokens[sem_idx].length <= pos:
+            sem_idx += 1
 
-            sem_style = style_ctx.get(sem)
+        applied = False
+        if sem_idx < num_sem:
+            tok = semantic_tokens[sem_idx]
+            if tok.start <= pos < tok.start + tok.length:
+                sem_ansi = style_ctx.get(tok.style)
+                if base_style not in PROTECTED and base_style not in (
+                    style_ctx.get("SYNTAX_WS"),
+                    style_ctx.get("SYNTAX_OPERATOR"),
+                ):
+                    final.append((ch, sem_ansi))
+                    applied = True
 
-            if base_style in (
-                style_ctx.get("SYNTAX_WS"),
-                style_ctx.get("SYNTAX_OPERATOR"),
-            ):
-                final.append((ch, base_style))
-                continue
+        if not applied:
+            final.append((ch, base_style))
 
-            final.append((ch, sem_style))
-
-        return final
-
-    return styled
+    return final

@@ -189,17 +189,15 @@ class LSPEngine:
         for provider in self._semantic_providers:
             try:
                 res = await self._maybe_await(provider, text)
+                if isinstance(res, dict) and "tokens" in res:
+                    return res
+                # backward-compat (если вдруг старый провайдер)
                 if isinstance(res, dict) and "styles" in res:
                     return res
-            except Exception as e:
+            except Exception:
                 logger.debug("semantic provider failed", exc_info=True)
                 continue
         return {"tokens": []}
-
-    async def _maybe_await(self, fn, *args):
-        if inspect.iscoroutinefunction(fn):
-            return await fn(*args)
-        return fn(*args)
     
     # ======================================================
     # LSP LAYER (NEW)

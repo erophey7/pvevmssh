@@ -25,7 +25,7 @@ class LineEditorPrivateInternal:
         self.vpriv.awaiting_menu = False
         self.vpriv.inline_hint = None
         self.vpriv.lsp_generation = 0
-        self.vpriv.semantic_styles = None
+        self.vpriv.semantic_tokens = None
         self.vpub.history.reset_index()
 
     def menu_hide(self) -> None:

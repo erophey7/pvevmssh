@@ -10,6 +10,12 @@ class VisualCell:
     style: str = ""
     highlight: bool = False
 
+@dataclass(frozen=True, slots=True)
+class SyntaxToken:
+    start: int
+    length: int
+    style: str
+
 
 @dataclass
 class ScreenPos:
@@ -35,4 +41,5 @@ __all__ = [
     "ScreenPos",
     "VisualCell",
     "Layout",
+    "SyntaxToken",
 ]

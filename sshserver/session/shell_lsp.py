@@ -9,7 +9,7 @@ if TYPE_CHECKING:
     from sshserver.lsp_engine import LSPEngine
 
 from sshserver.terminal.line_editor.text_utils import split_graphemes
-
+from sshserver.terminal.line_editor.types import SyntaxToken
 
 class ShellLSP:
     def __init__(self, dispatcher: CommandDispatcher):
@@ -109,75 +109,68 @@ class ShellLSP:
         return sorted(set(results))
 
     # ==========================================
-    # SEMANTIC TOKENS 
+    # SEMANTIC TOKENS (SPAN-BASED)
     # ==========================================
     def semantic_tokens(self, text: str) -> dict:
         if not text:
-            return {"styles": []}
+            return {"tokens": []}
 
         graphemes = split_graphemes(text)
         n = len(graphemes)
-        styles = ["SYNTAX_DEFAULT"] * n
+        if n == 0:
+            return {"tokens": []}
 
         try:
             tokens = shlex.split(text, posix=True)
         except Exception:
-            return {"styles": ["SYNTAX_WARNING"] * n}
+            return {"tokens": [SyntaxToken(0, n, "SYNTAX_WARNING")]}
 
         if not tokens:
-            return {"styles": styles}
+            return {"tokens": []}
 
         parser = self.dispatcher.get_command_parser(tokens[0])
 
+        semantic_tokens: list[SyntaxToken] = []
         gi = 0
         expect_command = True
         expecting_value_for = None
 
-        def write(start, end, style):
-            for i in range(start, min(end, n)):
-                styles[i] = style
+        def add_token(start: int, length: int, style: str) -> None:
+            if length > 0:
+                semantic_tokens.append(SyntaxToken(start, length, style))
 
         for ti, token in enumerate(tokens):
             # skip spaces
             while gi < n and graphemes[gi].isspace():
                 gi += 1
+            if gi >= n:
+                break
 
             start = gi
             buf = ""
-
             while gi < n and len(buf) < len(token):
                 buf += graphemes[gi]
                 gi += 1
+            length = gi - start
 
-            end = gi
-
-            # =========================
             # COMMAND
-            # =========================
             if expect_command:
                 expect_command = False
-
                 if ti == 0:
-                    if not parser:
-                        write(start, end, "SYNTAX_ERROR")
-                    else:
-                        write(start, end, "SYNTAX_COMMAND")
+                    style = "SYNTAX_ERROR" if not parser else "SYNTAX_COMMAND"
                 else:
-                    # subcommand check
                     if parser and parser._subparsers:
                         if token in parser._subparsers:
-                            write(start, end, "SYNTAX_SUBCOMMAND")
+                            style = "SYNTAX_SUBCOMMAND"
                             parser = parser._subparsers[token]
                         else:
-                            write(start, end, "SYNTAX_ERROR")
+                            style = "SYNTAX_ERROR"
                     else:
-                        write(start, end, "SYNTAX_ERROR")
-
+                        style = "SYNTAX_ERROR"
+                add_token(start, length, style)
                 continue
 
-            # =========================
             # FLAG
-            # =========================
             if token.startswith("-"):
                 arg = None
                 if parser:
@@ -185,33 +178,27 @@ class ShellLSP:
                         arg = parser._long_map.get(token[2:])
                     else:
                         arg = parser._short_map.get(token[1:])
-
-                if arg:
-                    write(start, end, "SYNTAX_FLAG")
-                    if getattr(arg, "takes_value", False):
-                        expecting_value_for = arg
-                else:
-                    write(start, end, "SYNTAX_ERROR")
-
+                style = "SYNTAX_FLAG" if arg else "SYNTAX_ERROR"
+                if arg and getattr(arg, "takes_value", False):
+                    expecting_value_for = arg
+                add_token(start, length, style)
                 continue
 
-            # =========================
             # VALUE
-            # =========================
             if expecting_value_for:
-                write(start, end, "SYNTAX_OPTION")
+                add_token(start, length, "SYNTAX_OPTION")
                 expecting_value_for = None
                 continue
 
-            # =========================
             # fallback
-            # =========================
-            write(start, end, "SYNTAX_DEFAULT")
+            add_token(start, length, "SYNTAX_DEFAULT")
 
-        # =========================
         # WARNING: unclosed quote
-        # =========================
         if text.count('"') % 2 != 0 or text.count("'") % 2 != 0:
-            styles[-1] = "SYNTAX_WARNING"
+            if semantic_tokens:
+                last = semantic_tokens[-1]
+                semantic_tokens[-1] = SyntaxToken(last.start, last.length, "SYNTAX_WARNING")
+            else:
+                semantic_tokens.append(SyntaxToken(0, n, "SYNTAX_WARNING"))
 
-        return {"styles": styles}
+        return {"tokens": semantic_tokens}

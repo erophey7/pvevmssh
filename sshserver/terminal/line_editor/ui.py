@@ -1,6 +1,9 @@
 from .layout import build_layout
 from sshserver.session.prompt import get_prompt_segments
 
+import logging
+logger = logging.getLogger(__name__)
+
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -29,8 +32,10 @@ class LineEditorUI:
             completion_index=self.vpriv.completion_index,
             inline_hint=self.vpriv.inline_hint,
             style_ctx=self.vpub.style_ctx,
-            semantic_styles=self.vpriv.semantic_styles,
+            semantic_tokens=self.vpriv.semantic_tokens,
         )
+
+        logger.debug(f"Layout: {layout}")
 
         out = b""
 
@@ -83,7 +88,7 @@ class LineEditorUI:
             completion_index=self.vpriv.completion_index,
             inline_hint=self.vpriv.inline_hint,
             style_ctx=self.vpub.style_ctx,
-            semantic_styles=self.vpriv.semantic_styles,
+            semantic_tokens=self.vpriv.semantic_tokens,
         )
 
         if (
