@@ -22,71 +22,110 @@ if TYPE_CHECKING:
 
 class LSPRequestManager:
     def __init__(self, connector: InCodeLSPConnector, max_cache: int = 32, ttl: float = 5.0):
+        # params
         self.connector = connector
-
-        self._task: asyncio.Task | None = None
-        self._key = None
-
-        self._lock = asyncio.Lock()
-
-        # cache: key -> (timestamp, result)
-        self._cache = OrderedDict()
         self._max_cache = max_cache
         self._ttl = ttl
 
-    # -------------------------
-    # CACHE HELPERS
-    # -------------------------
+        # complete state
+        self._complete_lock = asyncio.Lock()
+        self._complete_task: asyncio.Task | None = None
+        self._complete_key = None
+        self._complete_cache = OrderedDict()
 
-    def clear_cache(self):
-        self._cache.clear()
-        self._task = None
-        self._key = None
+        # semantic state
+        self._semantic_lock = asyncio.Lock()
+        self._semantic_task: asyncio.Task | None = None
+        self._semantic_key = None
+        self._semantic_cache = OrderedDict()
 
-    def _make_key(self, buffer, cursor, partial):
+    # -------------------------
+    # COMPLETE CACHE HELPERS
+    # -------------------------
+    def clear_complete_cache(self):
+        self._complete_cache.clear()
+        self._complete_task = None
+        self._complete_key = None
+
+    def _make_complete_key(self, buffer, cursor, partial):
         return (tuple(buffer), cursor, partial)
 
-    def _get_cached(self, key):
+    def _get_complete_cached(self, key):
         now = time.monotonic()
 
-        item = self._cache.get(key)
+        item = self._complete_cache.get(key)
         if not item:
             return None
 
         ts, value = item
 
         if now - ts > self._ttl:
-            del self._cache[key]
+            del self._complete_cache[key]
             return None
 
-        self._cache.move_to_end(key)
+        self._complete_cache.move_to_end(key)
         return value
 
-    def _store_cache(self, key, value):
-        self._cache[key] = (time.monotonic(), value)
-        self._cache.move_to_end(key)
+    def _store_complete_cache(self, key, value):
+        self._complete_cache[key] = (time.monotonic(), value)
+        self._complete_cache.move_to_end(key)
 
-        if len(self._cache) > self._max_cache:
-            self._cache.popitem(last=False)
+        if len(self._complete_cache) > self._max_cache:
+            self._complete_cache.popitem(last=False)
 
     def _prefix_match(self, partial):
-        for (buf, cur, old_partial), (ts, result) in reversed(self._cache.items()):
+        for (buf, cur, old_partial), (ts, result) in reversed(self._complete_cache.items()):
             if result and partial.startswith(old_partial):
                 return [c for c in result if c.startswith(partial)]
         return None
+    
+    # -------------------------
+    # SEMANTIC CACHE HELPERS
+    # -------------------------
+    def clear_semantic_cache(self):
+        self._semantic_cache.clear()
+        self._semantic_task = None
+        self._semantic_key = None
+
+    def _make_semantic_key(self, buffer):
+        return "".join(buffer)
+
+
+    def _get_semantic_cached(self, key):
+        now = time.monotonic()
+
+        item = self._semantic_cache.get(key)
+        if not item:
+            return None
+
+        ts, value = item
+
+        if now - ts > self._ttl:
+            del self._semantic_cache[key]
+            return None
+
+        self._semantic_cache.move_to_end(key)
+        return value
+
+
+    def _store_semantic_cache(self, key, value):
+        self._semantic_cache[key] = (time.monotonic(), value)
+        self._semantic_cache.move_to_end(key)
+
+        if len(self._semantic_cache) > self._max_cache:
+            self._semantic_cache.popitem(last=False)
 
     # -------------------------
-    # MAIN REQUEST
+    # COMPLETE REQUEST
     # -------------------------
-
-    async def request(self, buffer, cursor, partial, tokens, wait=False):
-        key = self._make_key(buffer, cursor, partial)
+    async def complete_request(self, buffer, cursor, partial, tokens, wait=False):
+        key = self._make_complete_key(buffer, cursor, partial)
 
         if partial == "":
-            self.clear_cache()
+            self.clear_complete_cache()
 
         # 1. exact cache
-        cached = self._get_cached(key)
+        cached = self._get_complete_cached(key)
         if cached is not None:
             return cached
 
@@ -96,28 +135,87 @@ class LSPRequestManager:
             return reused
 
         # 3. in-flight reuse
-        if self._task and not self._task.done() and self._key == key:
-            return await self._task
+        if self._complete_task and not self._complete_task.done() and self._complete_key == key:
+            return await self._complete_task
 
-        async with self._lock:
-            if self._task and not self._task.done() and self._key == key:
-                return await self._task
+        async with self._complete_lock:
+            if self._complete_task and not self._complete_task.done() and self._complete_key == key:
+                return await self._complete_task
 
             async def worker():
                 res = await self.connector.completion(partial, tokens)
-                self._store_cache(key, res)
+                self._store_complete_cache(key, res)
                 return res
 
-            self._key = key
-            self._task = asyncio.create_task(worker())
+            self._complete_key = key
+            self._complete_task = asyncio.create_task(worker())
 
-            return await self._task
-
+            return await self._complete_task
+        
+    # -------------------------
+    # SEMANTIC REQUEST
+    # -------------------------
+    async def semantic_request(self, buffer, generation, wait=False):
+        key = self._make_semantic_key(buffer)
+    
+        # 1. cache
+        cached = self._get_semantic_cached(key)
+        if cached is not None:
+            return cached
+    
+        # 2. cancel previous task (другой key или устаревший)
+        if self._semantic_task and not self._semantic_task.done():
+            self._semantic_task.cancel()
+    
+        # 3. in-flight reuse (редкий случай)
+        if (
+            self._semantic_task
+            and not self._semantic_task.done()
+            and self._semantic_key == key
+        ):
+            return await self._semantic_task if wait else None
+    
+        async with self._semantic_lock:
+            # повторная проверка
+            if (
+                self._semantic_task
+                and not self._semantic_task.done()
+                and self._semantic_key == key
+            ):
+                return await self._semantic_task if wait else None
+    
+            # отменяем внутри lock (на всякий случай)
+            if self._semantic_task and not self._semantic_task.done():
+                self._semantic_task.cancel()
+    
+            async def worker(gen, text):
+                try:
+                    res = await self.connector.semantic_tokens(text)
+    
+                    tokens = res.get("tokens") if isinstance(res, dict) else None
+                    if not isinstance(tokens, list):
+                        tokens = []
+    
+                    # ❗ защита от устаревшего результата
+                    if gen != generation:
+                        return None
+    
+                    self._store_semantic_cache(text, tokens)
+                    return tokens
+    
+                except asyncio.CancelledError:
+                    return None
+                except Exception:
+                    return None
+    
+            self._semantic_key = key
+            self._semantic_task = asyncio.create_task(worker(generation, key))
+    
+            return await self._semantic_task if wait else None
 
 # ======================================================
 # ADAPTER
 # ======================================================
-
 class LSPAdapter:
     def __init__(self, vpriv: LineEditorPrivateVars, vpub: LineEditorPublicVars, ui: LineEditorUI):
         self.connector: InCodeLSPConnector = None
@@ -131,8 +229,6 @@ class LSPAdapter:
         self._last_inline = 0.0
         self._last_semantic = 0.0
 
-        self._semantic_cache: dict[tuple[str, ...], list[SyntaxToken]] = {}
-
         self.vpriv = vpriv
         self.vpub = vpub
         self.ui = ui
@@ -140,80 +236,57 @@ class LSPAdapter:
     # ======================================================
     # BIND
     # ======================================================
-
     def set_engine(self, connector):
         self.connector = connector
         self.lsp = LSPRequestManager(connector)
 
     # ======================================================
-    # CONTEXT
-    # ======================================================
-
-    @staticmethod
-    def _context(buf, c):
-        s = "".join(buf[:c])
-
-        last_space = s.rfind(" ")
-
-        if last_space == -1:
-            tokens = []
-            partial = s
-            start = 0
-        else:
-            tokens = s[:last_space].split()
-            partial = s[last_space + 1:]
-            start = last_space + 1
-
-        return start, partial, tokens
-    
-    # ======================================================
     # SEMANTIC TOKENS (AST HIGHLIGHT)
     # ======================================================
     def schedule_semantic_highlight(self):
-        if not self.connector:
+        if not self.lsp:
             return
 
-        gen = self.vpriv.lsp_generation
-        buffer_key = tuple(self.vpriv.buffer)
-
-        if buffer_key in self._semantic_cache:
-            self.vpriv.semantic_styles = self._semantic_cache[buffer_key]
-            asyncio.create_task(self.ui.redraw())
-            return
+        gen = self.vpriv.lsp_semantic_generation
 
         now = time.monotonic()
         if now - self._last_semantic < self._debounce:
             return
         self._last_semantic = now
 
-        async def worker():
+        async def worker(local_gen):
+            await self.lsp.semantic_request(
+                self.vpriv.buffer,
+                generation=local_gen
+            )
+
+            # ждём завершения задачи
+            task = self.lsp._semantic_task
+            if not task:
+                return
+
             try:
-                result = await self.connector.semantic_tokens("".join(self.vpriv.buffer))
-                if gen != self.vpriv.lsp_generation:
-                    return
+                tokens = await task
+            except asyncio.CancelledError:
+                return
 
-                tokens = result.get("tokens") or []
-                if not isinstance(tokens, list):
-                    tokens = []
+            if tokens is None:
+                return
 
-                self._semantic_cache[buffer_key] = tokens
-                if len(self._semantic_cache) > 32:
-                    self._semantic_cache.pop(next(iter(self._semantic_cache)))
+            # ❗ проверка актуальности
+            if local_gen != self.vpriv.lsp_semantic_generation:
+                return
 
-                self.vpriv.semantic_tokens = tokens  
+            self.vpriv.semantic_tokens = tokens
 
-            except Exception:
-                self.vpriv.semantic_tokens = None
-
-            if gen == self.vpriv.lsp_generation:
+            if local_gen == self.vpriv.lsp_semantic_generation:
                 await self.ui.redraw()
 
-        asyncio.create_task(worker())
+        asyncio.create_task(worker(gen))
 
     # ======================================================
     # TAB COMPLETION
     # ======================================================
-
     async def tab_complete(self):
         if not self.lsp:
             return
@@ -224,7 +297,7 @@ class LSPAdapter:
 
         start, partial, tokens = self._context(self.vpriv.buffer, self.vpriv.cursor)
 
-        candidates = await self.lsp.request(
+        candidates = await self.lsp.complete_request(
             self.vpriv.buffer,
             self.vpriv.cursor,
             partial,
@@ -258,12 +331,11 @@ class LSPAdapter:
     # ======================================================
     # INLINE HINT
     # ======================================================
-
     def schedule_inline_hint(self):
         if not self.lsp:
             return
 
-        gen = self.vpriv.lsp_generation
+        gen = self.vpriv.lsp_complete_generation
 
         async def worker():
             start, partial, tokens = self._context(
@@ -271,7 +343,7 @@ class LSPAdapter:
                 self.vpriv.cursor
             )
 
-            candidates = await self.lsp.request(
+            candidates = await self.lsp.complete_request(
                 self.vpriv.buffer,
                 self.vpriv.cursor,
                 partial,
@@ -279,7 +351,7 @@ class LSPAdapter:
                 wait=False
             )
 
-            if gen != self.vpriv.lsp_generation:
+            if gen != self.vpriv.lsp_complete_generation:
                 return
 
             if len(candidates) == 1 and candidates[0].startswith(partial):
@@ -287,7 +359,7 @@ class LSPAdapter:
             else:
                 hint = None
 
-            if gen != self.vpriv.lsp_generation:
+            if gen != self.vpriv.lsp_complete_generation:
                 return
 
             self.vpriv.inline_hint = hint
@@ -298,7 +370,6 @@ class LSPAdapter:
     # ======================================================
     # MENU ACCEPT
     # ======================================================
-
     async def menu_accept(self):
         if not self.vpriv.completions or self.vpriv.completion_index is None:
             return
@@ -321,7 +392,6 @@ class LSPAdapter:
     # ======================================================
     # UTIL
     # ======================================================
-
     @staticmethod
     def _common_prefix(words):
         if not words:
@@ -335,3 +405,20 @@ class LSPAdapter:
             p = p[:i]
 
         return p
+    
+    @staticmethod
+    def _context(buf, c):
+        s = "".join(buf[:c])
+
+        last_space = s.rfind(" ")
+
+        if last_space == -1:
+            tokens = []
+            partial = s
+            start = 0
+        else:
+            tokens = s[:last_space].split()
+            partial = s[last_space + 1:]
+            start = last_space + 1
+
+        return start, partial, tokens

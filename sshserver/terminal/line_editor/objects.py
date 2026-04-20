@@ -33,8 +33,8 @@ class LineEditorPrivateVars:
         self.completions: list[str] | None = None
         self.completion_index: int = 0
         self.awaiting_menu: bool = False
-
         self.inline_hint: str | None = None
-        self.lsp_generation: int = 0
+        self.lsp_complete_generation: int = 0
 
         self.semantic_tokens: list["SyntaxToken"] | None = None
+        self.lsp_semantic_generation: int = 0

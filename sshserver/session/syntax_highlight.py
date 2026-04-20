@@ -50,15 +50,15 @@ class StyleConfig:
     SYNTAX_WS           = RESET
     SYNTAX_STRING       = "\x1b[35m"
     SYNTAX_NUMBER       = "\x1b[36m"
-    SYNTAX_PATH         = "\x1b[36m"   # пути
-    SYNTAX_ENV          = "\x1b[32m"   # $VAR
-    SYNTAX_FLAG         = "\x1b[33m"   # -f / --flag
-    SYNTAX_KEY          = "\x1b[34m"   # key=
-    SYNTAX_VALUE        = "\x1b[35m"   # value
-    SYNTAX_BOOL         = "\x1b[33m"   # true/false
-    SYNTAX_NULL         = "\x1b[2;37m" # null / none
-    SYNTAX_OPERATOR     = "\x1b[31m"   # | > < =
-    SYNTAX_COMMENT      = "\x1b[2;37m" # комментарии
+    SYNTAX_PATH         = "\x1b[36m"
+    SYNTAX_ENV          = "\x1b[32m"
+    SYNTAX_FLAG         = "\x1b[33m"
+    SYNTAX_KEY          = "\x1b[34m"
+    SYNTAX_VALUE        = "\x1b[35m"
+    SYNTAX_BOOL         = "\x1b[33m"
+    SYNTAX_NULL         = "\x1b[2;37m"
+    SYNTAX_OPERATOR     = "\x1b[31m"
+    SYNTAX_COMMENT      = "\x1b[2;37m"
     SYNTAX_ERROR        = ERROR
     SYNTAX_WARNING      = WARNING
 

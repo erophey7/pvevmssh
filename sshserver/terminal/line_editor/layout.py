@@ -1,13 +1,15 @@
 # layout.py
 import logging
-import typing as t
 
 from .text_utils import split_graphemes, char_width, get_style, highlight_buffer
 from .types import Layout, VisualCell, ScreenPos
-from sshserver.session.syntax_highlight import (
-    StyleConfig,
-    StyleContext
-)
+from sshserver.session.syntax_highlight import StyleConfig
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .types import SyntaxToken
+    from sshserver.session.syntax_highlight import StyleContext
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +24,7 @@ def build_layout(
     completion_index: int | None = None,
     inline_hint: str | None = None,
     style_ctx: StyleContext = None,
-    semantic_tokens: list[str] | None = None,
+    semantic_tokens: list["SyntaxToken"] | None = None,
 ) -> Layout:
     term_width = max(1, term_width or 80)
     term_height = max(24, term_height or 24)

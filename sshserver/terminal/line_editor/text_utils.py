@@ -37,8 +37,45 @@ def highlight_buffer(
     if not buffer:
         return []
 
-    # 1. Базовая подсветка (логическими токенами, как было раньше)
-    styled: list[tuple[str, str]] = []
+    # --- приоритеты стилей ---
+    STYLE_PRIORITY = {
+        # --- абсолютный верх (диагностика) ---
+        "SYNTAX_ERROR": 1000,
+        "SYNTAX_WARNING": 900,
+
+        # --- блокирующие семантики ---
+        "SYNTAX_COMMENT": 800,
+        "SYNTAX_STRING": 750,
+
+        # --- команда и структура CLI ---
+        "SYNTAX_COMMAND": 700,
+        "SYNTAX_SUBCOMMAND": 680,
+
+        # --- ключи/параметры ---
+        "SYNTAX_KEY": 650,
+        "SYNTAX_VALUE": 640,
+
+        # --- флаги / опции ---
+        "SYNTAX_FLAG": 620,
+        "SYNTAX_OPTION": 610,
+
+        # --- спец-типы значений ---
+        "SYNTAX_ENV": 580,
+        "SYNTAX_PATH": 570,
+        "SYNTAX_NUMBER": 560,
+        "SYNTAX_BOOL": 550,
+        "SYNTAX_NULL": 540,
+
+        # --- операторы ---
+        "SYNTAX_OPERATOR": 500,
+
+        # --- дефолт ---
+        "SYNTAX_DEFAULT": 100,
+        "SYNTAX_WS": 0,
+    }
+
+    # --- 1. базовая подсветка (имя + ansi) ---
+    styled: list[tuple[str, str, str]] = []  # (char, style_name, ansi)
     i = 0
     n = len(buffer)
     expect_command = True
@@ -48,17 +85,19 @@ def highlight_buffer(
         ch = buffer[i]
 
         if in_comment:
-            styled.append((ch, style_ctx.get("SYNTAX_COMMENT")))
+            name = "SYNTAX_COMMENT"
+            styled.append((ch, name, style_ctx.get(name)))
             i += 1
             continue
 
         if ch in "\"'":
             quote = ch
-            styled.append((ch, style_ctx.get("SYNTAX_STRING")))
+            name = "SYNTAX_STRING"
+            styled.append((ch, name, style_ctx.get(name)))
             i += 1
             while i < n:
                 ch = buffer[i]
-                styled.append((ch, style_ctx.get("SYNTAX_STRING")))
+                styled.append((ch, name, style_ctx.get(name)))
                 if ch == quote:
                     i += 1
                     break
@@ -66,100 +105,116 @@ def highlight_buffer(
             continue
 
         if ch.isspace():
-            styled.append((ch, style_ctx.get("SYNTAX_WS")))
+            name = "SYNTAX_WS"
+            styled.append((ch, name, style_ctx.get(name)))
             i += 1
             continue
 
         if ch in "|&><;":
-            styled.append((ch, style_ctx.get("SYNTAX_OPERATOR")))
+            name = "SYNTAX_OPERATOR"
+            styled.append((ch, name, style_ctx.get(name)))
             if ch in "|&;":
                 expect_command = True
             i += 1
             continue
 
-        token_start = i
         token = ""
+        start = i
         while i < n and not buffer[i].isspace() and buffer[i] not in "\"'|&><;":
             token += buffer[i]
             i += 1
 
         if token.startswith("#"):
-            style = style_ctx.get("SYNTAX_COMMENT")
+            name = "SYNTAX_COMMENT"
             for chh in token:
-                styled.append((chh, style))
+                styled.append((chh, name, style_ctx.get(name)))
             in_comment = True
             continue
 
-        style = "SYNTAX_DEFAULT"
+        # --- классификация токена ---
+        def emit(text, name):
+            ansi = style_ctx.get(name)
+            for chh in text:
+                styled.append((chh, name, ansi))
+
         if expect_command:
-            style = "SYNTAX_COMMAND"
+            emit(token, "SYNTAX_COMMAND")
             expect_command = False
-        elif token.startswith(("--", "-")):
-            style = "SYNTAX_FLAG"
-        elif "=" in token:
-            key, sep, value = token.partition("=")
-            for chh in key:
-                styled.append((chh, style_ctx.get("SYNTAX_KEY")))
-            styled.append((sep, style_ctx.get("SYNTAX_OPERATOR")))
-            val_style = style_ctx.get("SYNTAX_DEFAULT")
-            if value.isdigit():
-                val_style = style_ctx.get("SYNTAX_NUMBER")
-            elif value.lower() in ("true", "false"):
-                val_style = style_ctx.get("SYNTAX_BOOL")
-            elif value.lower() in ("null", "none"):
-                val_style = style_ctx.get("SYNTAX_NULL")
-            elif "/" in value or value.startswith("."):
-                val_style = style_ctx.get("SYNTAX_PATH")
-            for chh in value:
-                styled.append((chh, val_style))
             continue
-        elif "/" in token or token.startswith("."):
-            style = "SYNTAX_PATH"
+
+        if token.startswith(("--", "-")):
+            emit(token, "SYNTAX_FLAG")
+            continue
+
+        if "=" in token:
+            key, sep, value = token.partition("=")
+            emit(key, "SYNTAX_KEY")
+            emit(sep, "SYNTAX_OPERATOR")
+
+            if value.isdigit():
+                val_name = "SYNTAX_NUMBER"
+            elif value.lower() in ("true", "false"):
+                val_name = "SYNTAX_BOOL"
+            elif value.lower() in ("null", "none"):
+                val_name = "SYNTAX_NULL"
+            elif "/" in value or value.startswith("."):
+                val_name = "SYNTAX_PATH"
+            else:
+                val_name = "SYNTAX_DEFAULT"
+
+            emit(value, val_name)
+            continue
+
+        if "/" in token or token.startswith("."):
+            emit(token, "SYNTAX_PATH")
         elif token.lower() in ("true", "false"):
-            style = "SYNTAX_BOOL"
+            emit(token, "SYNTAX_BOOL")
         elif token.lower() in ("null", "none"):
-            style = "SYNTAX_NULL"
+            emit(token, "SYNTAX_NULL")
         elif token.isdigit():
-            style = "SYNTAX_NUMBER"
+            emit(token, "SYNTAX_NUMBER")
         elif token.startswith("$"):
-            style = "SYNTAX_ENV"
+            emit(token, "SYNTAX_ENV")
+        else:
+            emit(token, "SYNTAX_DEFAULT")
 
-        for chh in token:
-            styled.append((chh, style_ctx.get(style)))
-
-    # 2. Накладываем семантику (span-based)
-    if not semantic_tokens or not isinstance(semantic_tokens, list) or len(semantic_tokens) == 0:
-        return styled
+    # --- 2. накладываем семантику ---
+    if not semantic_tokens:
+        return [(ch, ansi) for ch, _, ansi in styled]
+    
+    logger.debug(semantic_tokens)
 
     final: list[tuple[str, str]] = []
-    PROTECTED = {
-        style_ctx.get("SYNTAX_STRING"),
-        style_ctx.get("SYNTAX_COMMENT"),
-    }
-
     sem_idx = 0
     num_sem = len(semantic_tokens)
 
-    for pos in range(len(buffer)):
-        ch, base_style = styled[pos]
+    for pos in range(len(styled)):
+        ch, base_name, base_ansi = styled[pos]
 
-        # продвигаем указатель на актуальный спан
-        while sem_idx < num_sem and semantic_tokens[sem_idx].start + semantic_tokens[sem_idx].length <= pos:
+        # двигаем указатель
+        while (
+            sem_idx < num_sem
+            and semantic_tokens[sem_idx].start + semantic_tokens[sem_idx].length <= pos
+        ):
             sem_idx += 1
 
         applied = False
+
         if sem_idx < num_sem:
             tok = semantic_tokens[sem_idx]
             if tok.start <= pos < tok.start + tok.length:
-                sem_ansi = style_ctx.get(tok.style)
-                if base_style not in PROTECTED and base_style not in (
-                    style_ctx.get("SYNTAX_WS"),
-                    style_ctx.get("SYNTAX_OPERATOR"),
-                ):
+                sem_name = tok.style
+                sem_ansi = style_ctx.get(sem_name)
+
+                base_prio = STYLE_PRIORITY.get(base_name, 0)
+                sem_prio = STYLE_PRIORITY.get(sem_name, 0)
+
+                # не трогаем whitespace
+                if base_name != "SYNTAX_WS" and sem_prio >= base_prio:
                     final.append((ch, sem_ansi))
                     applied = True
 
         if not applied:
-            final.append((ch, base_style))
-
+            final.append((ch, base_ansi))
+    logger.debug(final)
     return final

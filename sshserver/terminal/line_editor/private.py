@@ -27,7 +27,7 @@ class LineEditorLogic:
     def __init__(self, terminal):
         self.vpriv = LineEditorPrivateVars()
         self.vpub = LineEditorPublicVars(terminal)
-        self.internal = LineEditorPrivateInternal(self.vpriv, self.vpub)
+        self.internal = LineEditorPrivateInternal(self.vpriv, self.vpub, self)
 
         self.ui = LineEditorUI(self.vpriv, self.vpub)
         self.lsp_adapter = LSPAdapter(self.vpriv, self.vpub, self.ui)

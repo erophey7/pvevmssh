@@ -35,8 +35,6 @@ class LineEditorUI:
             semantic_tokens=self.vpriv.semantic_tokens,
         )
 
-        logger.debug(f"Layout: {layout}")
-
         out = b""
 
         if self.vpriv.last_layout is not None and self.vpriv.last_layout.cursor_pos.row > 0:

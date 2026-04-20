@@ -1,15 +1,17 @@
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from .objects import LineEditorPrivateVars, LineEditorPublicVars
+    from .private import LineEditorLogic
 
 import logging
 
 logger = logging.getLogger(__name__)
 
 class LineEditorPrivateInternal:
-    def __init__(self, vpriv: LineEditorPrivateVars, vpub: LineEditorPublicVars):
+    def __init__(self, vpriv: LineEditorPrivateVars, vpub: LineEditorPublicVars, parent: LineEditorLogic):
         self.vpriv: LineEditorPrivateVars = vpriv
         self.vpub: LineEditorPublicVars = vpub
+        self.parent: LineEditorLogic = parent
 
     def reset_state(self) -> None:
         self.vpriv.buffer.clear()
@@ -24,8 +26,11 @@ class LineEditorPrivateInternal:
         self.vpriv.completion_index = 0
         self.vpriv.awaiting_menu = False
         self.vpriv.inline_hint = None
-        self.vpriv.lsp_generation = 0
+        self.vpriv.lsp_complete_generation = 0
+        self.vpriv.lsp_semantic_generation = 0
         self.vpriv.semantic_tokens = None
+        self.parent.lsp_adapter.lsp.clear_complete_cache()
+        self.parent.lsp_adapter.lsp.clear_semantic_cache()
         self.vpub.history.reset_index()
 
     def menu_hide(self) -> None:

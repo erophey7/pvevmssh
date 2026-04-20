@@ -120,54 +120,105 @@ class ShellLSP:
         if n == 0:
             return {"tokens": []}
 
+        def find_unclosed_quote(text: str):
+            stack = []
+            for i, ch in enumerate(text):
+                if ch in ("'", '"'):
+                    if stack and stack[-1][0] == ch:
+                        stack.pop()
+                    else:
+                        stack.append((ch, i))
+            return stack[-1][1] if stack else None
+
         try:
             tokens = shlex.split(text, posix=True)
         except Exception:
-            return {"tokens": [SyntaxToken(0, n, "SYNTAX_WARNING")]}
+            quote_pos = find_unclosed_quote(text)
+            if quote_pos is not None:
+                return {
+                    "tokens": [
+                        SyntaxToken(quote_pos, n - quote_pos, "SYNTAX_WARNING")
+                    ]
+                }
+            return {"tokens": []}
 
         if not tokens:
             return {"tokens": []}
 
-        parser = self.dispatcher.get_command_parser(tokens[0])
+        cmd_name = tokens[0]
+        parser = self.dispatcher.get_command_parser(cmd_name)
 
         semantic_tokens: list[SyntaxToken] = []
         gi = 0
-        expect_command = True
+
+        used_optionals = set()
+        positional_index = 0
         expecting_value_for = None
 
-        def add_token(start: int, length: int, style: str) -> None:
+        def add_token(start: int, length: int, style: str):
             if length > 0:
                 semantic_tokens.append(SyntaxToken(start, length, style))
 
-        for ti, token in enumerate(tokens):
-            # skip spaces
+        def next_grapheme_span(token: str):
+            nonlocal gi
             while gi < n and graphemes[gi].isspace():
                 gi += 1
-            if gi >= n:
-                break
-
             start = gi
             buf = ""
             while gi < n and len(buf) < len(token):
                 buf += graphemes[gi]
                 gi += 1
-            length = gi - start
+            return start, gi - start
+
+        # ==========================================
+        # COMMAND (учёт команд без parser)
+        # ==========================================
+        if cmd_name in self.dispatcher.commands:
+            cmd_style = "SYNTAX_COMMAND"
+        else:
+            cmd_style = "SYNTAX_ERROR"
+
+        # если команда существует, но без parser → fallback
+        if cmd_style == "SYNTAX_COMMAND" and not parser:
+            for ti, token in enumerate(tokens):
+                start, length = next_grapheme_span(token)
+                if ti == 0:
+                    add_token(start, length, "SYNTAX_COMMAND")
+                else:
+                    add_token(start, length, "SYNTAX_DEFAULT")
+            return {"tokens": semantic_tokens}
+
+        # ==========================================
+        # MAIN LOOP
+        # ==========================================
+        for ti, token in enumerate(tokens):
+            start, length = next_grapheme_span(token)
 
             # COMMAND
-            if expect_command:
-                expect_command = False
-                if ti == 0:
-                    style = "SYNTAX_ERROR" if not parser else "SYNTAX_COMMAND"
-                else:
-                    if parser and parser._subparsers:
-                        if token in parser._subparsers:
-                            style = "SYNTAX_SUBCOMMAND"
-                            parser = parser._subparsers[token]
-                        else:
-                            style = "SYNTAX_ERROR"
-                    else:
-                        style = "SYNTAX_ERROR"
+            if ti == 0:
+                add_token(start, length, cmd_style)
+                continue
+
+            # SUBCOMMAND
+            if parser and parser._subparsers:
+                if token in parser._subparsers:
+                    parser = parser._subparsers[token]
+                    positional_index = 0
+                    add_token(start, length, "SYNTAX_SUBCOMMAND")
+                    continue
+                elif ti == 1:
+                    add_token(start, length, "SYNTAX_ERROR")
+                    continue
+
+            # VALUE (ожидаем значение)
+            if expecting_value_for:
+                valid = True
+                if expecting_value_for.choices:
+                    valid = token in map(str, expecting_value_for.choices)
+
+                style = "SYNTAX_OPTION" if valid else "SYNTAX_ERROR"
                 add_token(start, length, style)
+                expecting_value_for = None
                 continue
 
             # FLAG
@@ -178,27 +229,49 @@ class ShellLSP:
                         arg = parser._long_map.get(token[2:])
                     else:
                         arg = parser._short_map.get(token[1:])
-                style = "SYNTAX_FLAG" if arg else "SYNTAX_ERROR"
-                if arg and getattr(arg, "takes_value", False):
+
+                if not arg:
+                    add_token(start, length, "SYNTAX_ERROR")
+                    continue
+
+                # проверка на повтор (если хочешь строгость)
+                if not getattr(arg, "repeatable", True) and arg in used_optionals:
+                    add_token(start, length, "SYNTAX_ERROR")
+                    continue
+
+                used_optionals.add(arg)
+
+                add_token(start, length, "SYNTAX_FLAG")
+
+                if getattr(arg, "takes_value", False):
                     expecting_value_for = arg
+
+                continue
+
+            # POSITIONAL
+            if parser and positional_index < len(parser._positionals):
+                arg = parser._positionals[positional_index]
+
+                valid = True
+                if arg.choices:
+                    valid = token in map(str, arg.choices)
+
+                style = "SYNTAX_POSITIONAL" if valid else "SYNTAX_ERROR"
                 add_token(start, length, style)
+
+                positional_index += 1
                 continue
 
-            # VALUE
-            if expecting_value_for:
-                add_token(start, length, "SYNTAX_OPTION")
-                expecting_value_for = None
-                continue
+            # UNKNOWN
+            add_token(start, length, "SYNTAX_ERROR")
 
-            # fallback
-            add_token(start, length, "SYNTAX_DEFAULT")
-
-        # WARNING: unclosed quote
-        if text.count('"') % 2 != 0 or text.count("'") % 2 != 0:
-            if semantic_tokens:
-                last = semantic_tokens[-1]
-                semantic_tokens[-1] = SyntaxToken(last.start, last.length, "SYNTAX_WARNING")
-            else:
-                semantic_tokens.append(SyntaxToken(0, n, "SYNTAX_WARNING"))
+        # ==========================================
+        # WARNING: unclosed quotes (точечно)
+        # ==========================================
+        quote_pos = find_unclosed_quote(text)
+        if quote_pos is not None:
+            semantic_tokens.append(
+                SyntaxToken(quote_pos, n - quote_pos, "SYNTAX_WARNING")
+            )
 
         return {"tokens": semantic_tokens}
