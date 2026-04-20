@@ -34,12 +34,17 @@ class StyleConfig:
         BOLD_WHITE   = "\x1b[1;37m"
 
     # ====================== DEFAULTS ======================
+    SUCCESS             = "\x1b[32m"
+    WARNING             = "\x1b[33m"
+    ERROR               = "\x1b[31m"
+
     COMPLETION          = "\x1b[36m"
     COMPLETION_SELECTED = "\x1b[7;36m"
 
     INLINE_HINT         = "\x1b[2;37m"
 
     SYNTAX_COMMAND      = "\x1b[1;34m"
+    SYNTAX_SUBCOMMAND   = "\x1b[1;36m"
     SYNTAX_OPTION       = "\x1b[33m"
     SYNTAX_DEFAULT      = RESET
     SYNTAX_WS           = RESET
@@ -54,10 +59,9 @@ class StyleConfig:
     SYNTAX_NULL         = "\x1b[2;37m" # null / none
     SYNTAX_OPERATOR     = "\x1b[31m"   # | > < =
     SYNTAX_COMMENT      = "\x1b[2;37m" # комментарии
+    SYNTAX_ERROR        = ERROR
+    SYNTAX_WARNING      = WARNING
 
-    SUCCESS             = "\x1b[32m"
-    WARNING             = "\x1b[33m"
-    ERROR               = "\x1b[31m"
 
     # ====================== API ======================
     @classmethod
@@ -295,4 +299,6 @@ def _normalize_ansi(value: str) -> str:
         return value.replace("\\x1b", "\x1b")
     if value.startswith("\\033"):
         return value.replace("\\033", "\x1b")
+    if value.startswith("\\e"):
+        return value.replace("\\e", "\x1b")
     return value

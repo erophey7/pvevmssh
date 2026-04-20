@@ -36,3 +36,5 @@ class LineEditorPrivateVars:
 
         self.inline_hint: str | None = None
         self.lsp_generation: int = 0
+
+        self.semantic_styles: list[str] | None = None

@@ -22,6 +22,7 @@ def build_layout(
     completion_index: int | None = None,
     inline_hint: str | None = None,
     style_ctx: StyleContext = None,
+    semantic_styles: list[str] | None = None,
 ) -> Layout:
     term_width = max(1, term_width or 80)
     term_height = max(24, term_height or 24)
@@ -61,7 +62,11 @@ def build_layout(
             rows[row].append(VisualCell(seg.text, 0, None))
 
     # BUFFER + SYNTAX HIGHLIGHT
-    styled_buffer = highlight_buffer(buffer, style_ctx)
+    styled_buffer = highlight_buffer(
+        buffer=buffer, 
+        style_ctx=style_ctx, 
+        semantic_styles=semantic_styles
+    )
     for i, (g, style) in enumerate(styled_buffer):
         push_cell(g, char_width(g), i, style=style)
 

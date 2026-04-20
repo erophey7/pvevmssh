@@ -2,6 +2,9 @@ import asyncio
 import time
 from collections import OrderedDict
 
+import logging
+logger = logging.getLogger(__name__)
+
 from .text_utils import split_graphemes
 
 from typing import TYPE_CHECKING
@@ -17,7 +20,7 @@ if TYPE_CHECKING:
 # ======================================================
 
 class LSPRequestManager:
-    def __init__(self, connector, max_cache=32, ttl=5.0):
+    def __init__(self, connector: InCodeLSPConnector, max_cache: int = 32, ttl: float = 5.0):
         self.connector = connector
 
         self._task: asyncio.Task | None = None
@@ -125,6 +128,9 @@ class LSPAdapter:
         self._debounce = 0.08
         self._last_tab = 0.0
         self._last_inline = 0.0
+        self._last_semantic = 0.0
+
+        self._semantic_cache: dict[tuple[str, ...], list[str]] = {}
 
         self.vpriv = vpriv
         self.vpub = vpub
@@ -158,6 +164,52 @@ class LSPAdapter:
             start = last_space + 1
 
         return start, partial, tokens
+    
+    # ======================================================
+    # SEMANTIC TOKENS (AST HIGHLIGHT)
+    # ======================================================
+    def schedule_semantic_highlight(self):
+        if not self.connector:
+            return
+
+        gen = self.vpriv.lsp_generation
+        buffer_key = tuple(self.vpriv.buffer)
+
+        if buffer_key in self._semantic_cache:
+            self.vpriv.semantic_styles = self._semantic_cache[buffer_key]
+            asyncio.create_task(self.ui.redraw())
+            return
+
+        now = time.monotonic()
+        if now - self._last_semantic < self._debounce:
+            return
+        self._last_semantic = now
+
+        async def worker():
+            try:
+                result = await self.connector.semantic_tokens("".join(self.vpriv.buffer))
+                if gen != self.vpriv.lsp_generation:
+                    return
+
+                styles = result.get("styles") or result.get("tokens") or []
+                if len(styles) != len(self.vpriv.buffer):
+                    styles = ["SYNTAX_DEFAULT"] * len(self.vpriv.buffer)
+
+                self._semantic_cache[buffer_key] = styles
+                if len(self._semantic_cache) > 32:   
+                    self._semantic_cache.pop(next(iter(self._semantic_cache)))
+
+                self.vpriv.semantic_styles = styles
+
+            except Exception:
+                self.vpriv.semantic_styles = None
+
+            if gen == self.vpriv.lsp_generation:
+                await self.ui.redraw()
+
+            logger.debug(self.vpriv.semantic_styles)
+
+        asyncio.create_task(worker())
 
     # ======================================================
     # TAB COMPLETION

@@ -93,6 +93,7 @@ class LineEditorLogic:
             self.vpriv.completions = None
             self.vpriv.inline_hint = None
             self.lsp_adapter.schedule_inline_hint()
+            self.lsp_adapter.schedule_semantic_highlight()
             self.vpriv.history_navigation_active = False
             await self.ui.redraw()
 
@@ -145,6 +146,7 @@ class LineEditorLogic:
         async with self.vpriv.lock:
             if self.vpriv.completions is not None:
                 await self.lsp_adapter.menu_accept()
+                self.lsp_adapter.schedule_semantic_highlight()
 
     # ===============================================
     # INLINE HINT ACCEPT
@@ -160,6 +162,7 @@ class LineEditorLogic:
             self.vpriv.inline_hint = None
             self.vpriv.completions = None
             self.vpriv.history_navigation_active = False
+            self.lsp_adapter.schedule_semantic_highlight()
             await self.ui.redraw()
 
     # ===============================================
@@ -391,6 +394,7 @@ class LineEditorLogic:
             self.vpriv.buffer.pop(self.vpriv.cursor)
             self.internal.menu_hide()
             self.lsp_adapter.schedule_inline_hint()
+            self.lsp_adapter.schedule_semantic_highlight()
             self.vpriv.history_navigation_active = False
             await self.ui.redraw()
 
@@ -402,6 +406,7 @@ class LineEditorLogic:
 
             self.internal.menu_hide()
             self.lsp_adapter.schedule_inline_hint()
+            self.lsp_adapter.schedule_semantic_highlight()
             self.vpriv.history_navigation_active = False
             await self.ui.redraw()
 

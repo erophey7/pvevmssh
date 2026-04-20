@@ -84,6 +84,8 @@ class InCodeLSPConnector:
 
             "textDocument/completion": "on_completion",
             "textDocument/hover": "on_hover",
+
+            "textDocument/semanticTokens/full": "on_semantic_tokens",
         }.get(method, "on_" + method.replace("/", "_"))
 
     # ======================================================
@@ -91,19 +93,22 @@ class InCodeLSPConnector:
     # ======================================================
 
     async def completion(self, partial: str, tokens: list[str]) -> list[str]:
-        logger.debug("Complete request: partial=%s | tokens=%s", partial, tokens)
         answer = await self.request(
             "textDocument/completion",
             {"partial": partial, "tokens": tokens},
         )
-        logger.debug(f"Complete answer: {answer}")
         return answer
 
     async def hover(self, text: str, position: int):
-        logger.debug("Hover request: text=%s | position=%s", text, position)
         answer = await self.request(
             "textDocument/hover",
             {"text": text, "position": position},
         )
-        logger.debug(f"Hover answer: {answer}")
+        return answer
+    
+    async def semantic_tokens(self, text: str) -> dict:
+        answer = await self.request(
+            "textDocument/semanticTokens/full",
+            {"text": text},
+        )
         return answer

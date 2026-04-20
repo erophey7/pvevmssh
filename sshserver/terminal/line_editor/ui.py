@@ -28,7 +28,8 @@ class LineEditorUI:
             completions=self.vpriv.completions,
             completion_index=self.vpriv.completion_index,
             inline_hint=self.vpriv.inline_hint,
-            style_ctx=self.vpub.style_ctx
+            style_ctx=self.vpub.style_ctx,
+            semantic_styles=self.vpriv.semantic_styles,
         )
 
         out = b""
@@ -81,7 +82,8 @@ class LineEditorUI:
             completions=self.vpriv.completions,
             completion_index=self.vpriv.completion_index,
             inline_hint=self.vpriv.inline_hint,
-            style_ctx=self.vpub.style_ctx
+            style_ctx=self.vpub.style_ctx,
+            semantic_styles=self.vpriv.semantic_styles,
         )
 
         if (

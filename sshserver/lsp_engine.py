@@ -48,6 +48,7 @@ class LSPEngine:
         self._global_words: set[str] = set()
 
         self._dynamic_providers: list[t.Callable] = []
+        self._semantic_providers: list[t.Callable] = []
 
         self._clients: dict[str, t.Any] = {}
         self._default_client: str | None = None
@@ -85,6 +86,10 @@ class LSPEngine:
 
     def register_dynamic_provider(self, provider):
         self._dynamic_providers.append(provider)
+
+    def register_semantic_provider(self, provider):
+        """Регистрирует провайдер, который умеет возвращать semantic_tokens(text)"""
+        self._semantic_providers.append(provider)
 
     # ======================================================
     # clients
@@ -178,6 +183,18 @@ class LSPEngine:
             )
 
         return sorted(set(candidates))
+    
+    async def get_semantic_tokens(self, text: str) -> dict:
+        """Вызывает все зарегистрированные semantic-провайдеры"""
+        for provider in self._semantic_providers:
+            try:
+                res = await self._maybe_await(provider, text)
+                if isinstance(res, dict) and "styles" in res:
+                    return res
+            except Exception as e:
+                logger.debug("semantic provider failed", exc_info=True)
+                continue
+        return {"tokens": []}
 
     async def _maybe_await(self, fn, *args):
         if inspect.iscoroutinefunction(fn):
@@ -224,3 +241,7 @@ class LSPEngine:
                 "value": f"```text\n{text}\n```",
             }
         }
+    
+    async def on_semantic_tokens(self, params: dict):
+        text = params.get("text", "")
+        return await self.get_semantic_tokens(text)

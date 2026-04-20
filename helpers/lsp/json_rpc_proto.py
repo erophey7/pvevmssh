@@ -75,6 +75,9 @@ class LspMethod:
     HOVER = "textDocument/hover"
     DIAGNOSTIC = "textDocument/diagnostic"
 
+    # SEMANTIC TOKENS
+    SEMANTIC_TOKENS_FULL = "textDocument/semanticTokens/full"
+
 
 # ======================================================
 # LSP CORE TYPES
@@ -202,6 +205,27 @@ class Hover:
 class HoverParams:
     textDocument: TextDocumentIdentifier
     position: Position
+
+# ======================================================
+# SEMANTIC TOKENS 
+# ======================================================
+
+@dataclass
+class SemanticTokensParams:
+    textDocument: TextDocumentIdentifier
+    text: str | None = None
+
+
+@dataclass
+class SemanticToken:
+    start: int
+    length: int
+    style: str 
+
+
+@dataclass
+class SemanticTokens:
+    tokens: list[SemanticToken]
 
 
 # ======================================================
