@@ -1,11 +1,12 @@
 # layout.py
 import logging
 
-from .text_utils import get_style, highlight_buffer
+from .text_utils import char_width, get_style, highlight_buffer
 from .types import Layout, VisualCell, ScreenPos
 
 from sshserver.session.syntax_highlight import StyleConfig
-from helpers.text_utils.char_tools import char_width, split_graphemes
+from helpers.text_utils.char_tools import split_graphemes
+
 
 from typing import TYPE_CHECKING
 
@@ -65,14 +66,18 @@ def build_layout(
         else:
             rows[row].append(VisualCell(seg.text, 0, None))
 
-    # BUFFER + SYNTAX HIGHLIGHT
-    styled_buffer = highlight_buffer(
+    # BUFFER + SYNTAX HIGHLIGHT (теперь runs)
+    styled_runs = highlight_buffer(
         buffer=buffer, 
         style_ctx=style_ctx, 
         semantic_tokens=semantic_tokens
     )
-    for i, (g, style) in enumerate(styled_buffer):
-        push_cell(g, char_width(g), i, style=style)
+
+    buf_idx = 0
+    for run_text, style in styled_runs:
+        for g in split_graphemes(run_text):
+            push_cell(g, char_width(g), buf_idx, style=style)
+            buf_idx += 1
 
     pending_wrap = (col == term_width + 1)
 
@@ -81,7 +86,7 @@ def build_layout(
     else:
         cursor_pos = index_to_pos[cursor]
 
-    # === INLINE HINT (ghost text) — только если курсор в конце ===
+    # === INLINE HINT ===
     if inline_hint and cursor == len(buffer):
         hint_style = style_ctx.get("INLINE_HINT")
         for g in split_graphemes(inline_hint):
@@ -90,20 +95,31 @@ def build_layout(
     end_pos = ScreenPos(row + 1 if (col == term_width + 1) else row,
                         1 if (col == term_width + 1) else col)
 
-    # ANSI для строки ввода
-    input_ansi = ""
-    current_style = ""
+    # ==================== ANSI ДЛЯ СТРОКИ ВВОДА (оптимизировано) ====================
+    parts: list[str] = []
+    current_style = ""                     # "" = дефолт, не нужно сбрасывать
+
     for visual_row in rows:
         for cell in visual_row:
             style = cell.style + ("\x1b[7m" if cell.highlight else "")
+
+            if style == StyleConfig.RESET:
+                style = ""
+
             if style != current_style:
-                if current_style:
-                    input_ansi += StyleConfig.RESET
-                input_ansi += style
+                if current_style:          # сбрасываем предыдущий colored-ран
+                    parts.append(StyleConfig.RESET)
+                if style:                  # красим только если есть цвет
+                    parts.append(style)
                 current_style = style
-            input_ansi += cell.text
+
+            parts.append(cell.text)
+
+    # финальный сброс — только если закончили colored-раном
     if current_style:
-        input_ansi += StyleConfig.RESET
+        parts.append(StyleConfig.RESET)
+
+    input_ansi = "".join(parts)
 
     # ==================== МЕНЮ ====================
     menu_ansi = ""

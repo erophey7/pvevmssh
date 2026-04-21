@@ -355,6 +355,7 @@ class LineEditorLogic:
 
             self.vpriv.buffer = split_graphemes(prev)
             self.vpriv.cursor = len(self.vpriv.buffer)
+            self.lsp_adapter.schedule_semantic_highlight()
             await self.ui.redraw()
 
     async def history_down(self) -> None:
@@ -380,6 +381,7 @@ class LineEditorLogic:
 
             self.vpriv.buffer = split_graphemes(nxt)
             self.vpriv.cursor = len(self.vpriv.buffer)
+            self.lsp_adapter.schedule_semantic_highlight()
             await self.ui.redraw()
 
     async def history_search_backward(self) -> None:

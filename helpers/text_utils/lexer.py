@@ -20,20 +20,21 @@ class LexToken:
 # ==========================================
 # TOKEN TYPES
 # ==========================================
-TK_WS        = "ws"
-TK_WORD      = "word"
-TK_STRING    = "string"
-TK_OPERATOR  = "operator"
-TK_FLAG      = "flag"
-TK_KEY       = "key"
-TK_VALUE     = "value"
-TK_COMMENT   = "comment"
-TK_ENV       = "env"
-TK_NUMBER    = "number"
-TK_BOOL      = "bool"
-TK_NULL      = "null"
-TK_PATH      = "path"
-TK_COMMAND   = "command"
+TK_WS               = "ws"
+TK_WORD             = "word"
+TK_STRING           = "string"
+TK_STRING_UNCLOSED  = "string_unclosed"
+TK_OPERATOR         = "operator"
+TK_FLAG             = "flag"
+TK_KEY              = "key"
+TK_VALUE            = "value"
+TK_COMMENT          = "comment"
+TK_ENV              = "env"
+TK_NUMBER           = "number"
+TK_BOOL             = "bool"
+TK_NULL             = "null"
+TK_PATH             = "path"
+TK_COMMAND          = "command"
 
 
 OPERATORS = set("|&><;")
@@ -89,14 +90,19 @@ def lex(text: str) -> List[LexToken]:
             quote = ch
             start = i
             i += 1
-
+        
+            closed = False
+        
             while i < n:
+                # TODO: можно добавить escape поддержку позже
                 if g[i] == quote:
                     i += 1
+                    closed = True
                     break
                 i += 1
-
-            emit(start, i, TK_STRING)
+        
+            kind = TK_STRING if closed else TK_STRING_UNCLOSED
+            emit(start, i, kind)
             continue
 
         # =========================

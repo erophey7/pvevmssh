@@ -1,5 +1,24 @@
 import logging
 import shlex
+from helpers.text_utils.lexer import (
+    lex,
+    LexToken,
+    TK_BOOL,
+    TK_COMMAND,
+    TK_COMMENT,
+    TK_ENV,
+    TK_FLAG,
+    TK_KEY,
+    TK_NULL,
+    TK_NUMBER,
+    TK_OPERATOR,
+    TK_PATH,
+    TK_STRING,
+    TK_STRING_UNCLOSED,
+    TK_VALUE,
+    TK_WORD,
+    TK_WS
+)
 
 logger = logging.getLogger(__name__)
 
@@ -115,137 +134,132 @@ class ShellLSP:
         if not text:
             return {"tokens": []}
 
-        graphemes = split_graphemes(text)
-        n = len(graphemes)
-        if n == 0:
-            return {"tokens": []}
-
-        def find_unclosed_quote(text: str):
-            stack = []
-            for i, ch in enumerate(text):
-                if ch in ("'", '"'):
-                    if stack and stack[-1][0] == ch:
-                        stack.pop()
-                    else:
-                        stack.append((ch, i))
-            return stack[-1][1] if stack else None
-
-        try:
-            tokens = shlex.split(text, posix=True)
-        except Exception:
-            quote_pos = find_unclosed_quote(text)
-            if quote_pos is not None:
-                return {
-                    "tokens": [
-                        SyntaxToken(quote_pos, n - quote_pos, "SYNTAX_WARNING")
-                    ]
-                }
-            return {"tokens": []}
-
-        if not tokens:
-            return {"tokens": []}
-
-        cmd_name = tokens[0]
-        parser = self.dispatcher.get_command_parser(cmd_name)
-
+        tokens = lex(text)
         semantic_tokens: list[SyntaxToken] = []
-        gi = 0
 
+        parser = None
         used_optionals = set()
         positional_index = 0
         expecting_value_for = None
 
-        def add_token(start: int, length: int, style: str):
-            if length > 0:
-                semantic_tokens.append(SyntaxToken(start, length, style))
+        # ==========================
+        # helpers
+        # ==========================
+        def add(tok: LexToken, style: str):
+            semantic_tokens.append(
+                SyntaxToken(tok.start, tok.length, style)
+            )
 
-        def next_grapheme_span(token: str):
-            nonlocal gi
-            while gi < n and graphemes[gi].isspace():
-                gi += 1
-            start = gi
-            buf = ""
-            while gi < n and len(buf) < len(token):
-                buf += graphemes[gi]
-                gi += 1
-            return start, gi - start
+        # ==========================
+        # find command
+        # ==========================
+        cmd_token = None
+        for t in tokens:
+            if t.kind == TK_COMMAND:
+                cmd_token = t
+                break
 
-        # ==========================================
-        # COMMAND (учёт команд без parser)
-        # ==========================================
-        if cmd_name in self.dispatcher.commands:
-            cmd_style = "SYNTAX_COMMAND"
-        else:
-            cmd_style = "SYNTAX_ERROR"
+        if not cmd_token:
+            return {"tokens": []}
 
-        # если команда существует, но без parser → fallback
+        cmd_name = cmd_token.text
+        parser = self.dispatcher.get_command_parser(cmd_name)
+
+        cmd_style = (
+            "SYNTAX_COMMAND"
+            if cmd_name in self.dispatcher.commands
+            else "SYNTAX_ERROR"
+        )
+
+        # ==========================
+        # fallback: no parser
+        # ==========================
         if cmd_style == "SYNTAX_COMMAND" and not parser:
-            for ti, token in enumerate(tokens):
-                start, length = next_grapheme_span(token)
-                if ti == 0:
-                    add_token(start, length, "SYNTAX_COMMAND")
+            for i, t in enumerate(tokens):
+                if t.kind == TK_COMMAND:
+                    add(t, "SYNTAX_COMMAND")
+                elif t.kind == TK_STRING:
+                    add(t, "SYNTAX_STRING")
                 else:
-                    add_token(start, length, "SYNTAX_DEFAULT")
+                    add(t, "SYNTAX_DEFAULT")
+
             return {"tokens": semantic_tokens}
 
-        # ==========================================
+        # ==========================
         # MAIN LOOP
-        # ==========================================
-        for ti, token in enumerate(tokens):
-            start, length = next_grapheme_span(token)
+        # ==========================
+        for i, t in enumerate(tokens):
 
             # COMMAND
-            if ti == 0:
-                add_token(start, length, cmd_style)
+            if t.kind == TK_COMMAND:
+                add(t, cmd_style)
                 continue
 
-            # SUBCOMMAND
-            if parser and parser._subparsers:
-                if token in parser._subparsers:
-                    parser = parser._subparsers[token]
-                    positional_index = 0
-                    add_token(start, length, "SYNTAX_SUBCOMMAND")
-                    continue
-                elif ti == 1:
-                    add_token(start, length, "SYNTAX_ERROR")
-                    continue
+            # WHITESPACE / COMMENT ignore
+            if t.kind in (TK_WS, TK_COMMENT):
+                continue
 
-            # VALUE (ожидаем значение)
-            if expecting_value_for:
-                valid = True
-                if expecting_value_for.choices:
-                    valid = token in map(str, expecting_value_for.choices)
+            # STRING
+            if t.kind == TK_STRING:
+                if t.kind == TK_STRING:
+                    add(t, "SYNTAX_STRING")
+                continue
 
-                style = "SYNTAX_OPTION" if valid else "SYNTAX_ERROR"
-                add_token(start, length, style)
-                expecting_value_for = None
+            # STRING UNCLOSED
+            if t.kind == TK_STRING_UNCLOSED:
+                add(t, "SYNTAX_WARNING")
                 continue
 
             # FLAG
-            if token.startswith("-"):
+            if t.kind == TK_FLAG:
                 arg = None
+
                 if parser:
-                    if token.startswith("--"):
-                        arg = parser._long_map.get(token[2:])
+                    if t.text.startswith("--"):
+                        arg = parser._long_map.get(t.text[2:])
                     else:
-                        arg = parser._short_map.get(token[1:])
+                        arg = parser._short_map.get(t.text[1:])
 
                 if not arg:
-                    add_token(start, length, "SYNTAX_ERROR")
+                    add(t, "SYNTAX_ERROR")
                     continue
 
-                # проверка на повтор (если хочешь строгость)
                 if not getattr(arg, "repeatable", True) and arg in used_optionals:
-                    add_token(start, length, "SYNTAX_ERROR")
+                    add(t, "SYNTAX_ERROR")
                     continue
 
                 used_optionals.add(arg)
-
-                add_token(start, length, "SYNTAX_FLAG")
+                add(t, "SYNTAX_FLAG")
 
                 if getattr(arg, "takes_value", False):
                     expecting_value_for = arg
 
+                continue
+
+            # VALUE / KEY / WORD
+            if expecting_value_for:
+                valid = True
+                if expecting_value_for.choices:
+                    valid = t.text in map(str, expecting_value_for.choices)
+
+                add(t, "SYNTAX_OPTION" if valid else "SYNTAX_ERROR")
+                expecting_value_for = None
+                continue
+
+            # KEY=VALUE
+            if t.kind == TK_KEY:
+                add(t, "SYNTAX_KEY")
+                continue
+
+            if t.kind == TK_OPERATOR:
+                add(t, "SYNTAX_OPERATOR")
+                continue
+
+            # SUBCOMMAND
+            if parser and parser._subparsers and t.text in parser._subparsers:
+                parser = parser._subparsers[t.text]
+                positional_index = 0
+                add(t, "SYNTAX_SUBCOMMAND")
                 continue
 
             # POSITIONAL
@@ -254,24 +268,14 @@ class ShellLSP:
 
                 valid = True
                 if arg.choices:
-                    valid = token in map(str, arg.choices)
+                    valid = t.text in map(str, arg.choices)
 
-                style = "SYNTAX_POSITIONAL" if valid else "SYNTAX_ERROR"
-                add_token(start, length, style)
+                add(t, "SYNTAX_POSITIONAL" if valid else "SYNTAX_ERROR")
 
                 positional_index += 1
                 continue
 
-            # UNKNOWN
-            add_token(start, length, "SYNTAX_ERROR")
-
-        # ==========================================
-        # WARNING: unclosed quotes (точечно)
-        # ==========================================
-        quote_pos = find_unclosed_quote(text)
-        if quote_pos is not None:
-            semantic_tokens.append(
-                SyntaxToken(quote_pos, n - quote_pos, "SYNTAX_WARNING")
-            )
+            # DEFAULT
+            add(t, "SYNTAX_ERROR")
 
         return {"tokens": semantic_tokens}
