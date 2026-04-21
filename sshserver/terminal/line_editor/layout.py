@@ -1,9 +1,11 @@
 # layout.py
 import logging
 
-from .text_utils import split_graphemes, char_width, get_style, highlight_buffer
+from .text_utils import get_style, highlight_buffer
 from .types import Layout, VisualCell, ScreenPos
+
 from sshserver.session.syntax_highlight import StyleConfig
+from helpers.text_utils.char_tools import char_width, split_graphemes
 
 from typing import TYPE_CHECKING
 

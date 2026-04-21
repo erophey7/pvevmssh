@@ -1,4 +1,3 @@
-import regex
 import typing as t
 from wcwidth import wcswidth
 
@@ -9,15 +8,9 @@ if t.TYPE_CHECKING:
 import logging
 logger = logging.getLogger(__name__)
 
-
-def split_graphemes(text: str) -> list[str]:
-    return regex.findall(r"\X", text)
-
-
 def char_width(g: str) -> int:
     width = wcswidth(g)
     return width if width > 0 else 1
-
 
 def char_class(g: str) -> str:
     if g.isspace():

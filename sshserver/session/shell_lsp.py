@@ -8,7 +8,7 @@ if TYPE_CHECKING:
     from sshserver.dispatcher import CommandDispatcher
     from sshserver.lsp_engine import LSPEngine
 
-from sshserver.terminal.line_editor.text_utils import split_graphemes
+from helpers.text_utils.char_tools import split_graphemes
 from sshserver.terminal.line_editor.types import SyntaxToken
 
 class ShellLSP:

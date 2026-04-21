@@ -5,7 +5,7 @@ from collections import OrderedDict
 import logging
 logger = logging.getLogger(__name__)
 
-from .text_utils import split_graphemes
+from helpers.text_utils.char_tools import split_graphemes
 
 from typing import TYPE_CHECKING
 
@@ -157,16 +157,16 @@ class LSPRequestManager:
     # -------------------------
     async def semantic_request(self, buffer, generation, wait=False):
         key = self._make_semantic_key(buffer)
-    
+
         # 1. cache
         cached = self._get_semantic_cached(key)
         if cached is not None:
             return cached
-    
+
         # 2. cancel previous task (другой key или устаревший)
         if self._semantic_task and not self._semantic_task.done():
             self._semantic_task.cancel()
-    
+
         # 3. in-flight reuse (редкий случай)
         if (
             self._semantic_task
@@ -174,7 +174,7 @@ class LSPRequestManager:
             and self._semantic_key == key
         ):
             return await self._semantic_task if wait else None
-    
+
         async with self._semantic_lock:
             # повторная проверка
             if (
@@ -183,34 +183,34 @@ class LSPRequestManager:
                 and self._semantic_key == key
             ):
                 return await self._semantic_task if wait else None
-    
+
             # отменяем внутри lock (на всякий случай)
             if self._semantic_task and not self._semantic_task.done():
                 self._semantic_task.cancel()
-    
+
             async def worker(gen, text):
                 try:
                     res = await self.connector.semantic_tokens(text)
-    
+
                     tokens = res.get("tokens") if isinstance(res, dict) else None
                     if not isinstance(tokens, list):
                         tokens = []
-    
+
                     # ❗ защита от устаревшего результата
                     if gen != generation:
                         return None
-    
+
                     self._store_semantic_cache(text, tokens)
                     return tokens
-    
+
                 except asyncio.CancelledError:
                     return None
                 except Exception:
                     return None
-    
+
             self._semantic_key = key
             self._semantic_task = asyncio.create_task(worker(generation, key))
-    
+
             return await self._semantic_task if wait else None
 
 # ======================================================

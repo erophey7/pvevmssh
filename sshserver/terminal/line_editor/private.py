@@ -1,6 +1,7 @@
 # project objects & funcs
 from sshserver.session import CommandHistory, get_current_session
 from helpers.globals import GlobalStore
+from helpers.text_utils.char_tools import split_graphemes
 
 # self objects & internal
 from .objects import LineEditorPrivateVars, LineEditorPublicVars
@@ -9,7 +10,8 @@ from .lsp_adapter import LSPAdapter
 
 
 # self funcs
-from .text_utils import split_graphemes, char_class
+from .text_utils import char_class
+
 from .types import EOF
 from .ui import LineEditorUI
 
