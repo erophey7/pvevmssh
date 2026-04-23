@@ -121,4 +121,11 @@ async def _init_users_table(db, default_group):
 
 
 if __name__ == "__main__":
-    sys.exit(asyncio.run(main()))
+    try:
+        import uvloop
+        loop_factory = uvloop.new_event_loop
+    except ImportError:
+        loop_factory = None
+
+    with asyncio.Runner(loop_factory=loop_factory) as runner:
+        sys.exit(runner.run(main()))

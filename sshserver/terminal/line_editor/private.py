@@ -483,7 +483,7 @@ class LineEditorLogic:
     # ===============================================
     async def clear_screen(self) -> None:
         async with self.vpriv.lock:
-            await self.ui.clear_screen_and_redraw(self)
+            await self.ui.clear_screen_and_redraw()
 
     async def ctrlc_cancellation(self) -> str:
         async with self.vpriv.lock:

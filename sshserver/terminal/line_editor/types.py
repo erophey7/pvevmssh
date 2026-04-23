@@ -1,7 +1,6 @@
 from dataclasses import dataclass, field
 from ..types import EOF
 
-
 @dataclass
 class VisualCell:
     text: str
@@ -10,18 +9,10 @@ class VisualCell:
     style: str = ""
     highlight: bool = False
 
-@dataclass(frozen=True, slots=True)
-class SyntaxToken:
-    start: int
-    length: int
-    style: str
-
-
 @dataclass
 class ScreenPos:
     row: int
     col: int
-
 
 @dataclass
 class Layout:
@@ -35,11 +26,9 @@ class Layout:
     menu_start_col: int = 1
     menu_grid: tuple[int, int] = (0, 0)
 
-
 __all__ = [
     "EOF",
     "ScreenPos",
     "VisualCell",
     "Layout",
-    "SyntaxToken",
 ]

@@ -13,7 +13,6 @@ if TYPE_CHECKING:
     from .objects import LineEditorPrivateVars, LineEditorPublicVars
     from .ui import LineEditorUI
     from helpers.lsp.incode_connector import InCodeLSPConnector
-    from .types import SyntaxToken
 
 
 # ======================================================
@@ -196,7 +195,6 @@ class LSPRequestManager:
                     if not isinstance(tokens, list):
                         tokens = []
 
-                    # ❗ защита от устаревшего результата
                     if gen != generation:
                         return None
 

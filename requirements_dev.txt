@@ -43,6 +43,7 @@ textual==8.2.3
 typing-inspection==0.4.2
 typing_extensions==4.15.0
 uc-micro-py==2.0.0
+uvloop==0.22.1
 viztracer==1.1.1
 wcwidth==0.6.0
 yarl==1.23.0

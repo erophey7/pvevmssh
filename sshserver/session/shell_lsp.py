@@ -1,5 +1,5 @@
 import logging
-import shlex
+logger = logging.getLogger(__name__)
 from helpers.text_utils.lexer import (
     lex,
     LexToken,
@@ -19,16 +19,12 @@ from helpers.text_utils.lexer import (
     TK_WORD,
     TK_WS
 )
-
-logger = logging.getLogger(__name__)
+from helpers.lsp.json_rpc_proto import SemanticToken, SemanticTokens
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from sshserver.dispatcher import CommandDispatcher
     from sshserver.lsp_engine import LSPEngine
-
-from helpers.text_utils.char_tools import split_graphemes
-from sshserver.terminal.line_editor.types import SyntaxToken
 
 class ShellLSP:
     def __init__(self, dispatcher: CommandDispatcher):
@@ -135,7 +131,7 @@ class ShellLSP:
             return {"tokens": []}
 
         tokens = lex(text)
-        semantic_tokens: list[SyntaxToken] = []
+        semantic_tokens: SemanticTokens = []
 
         parser = None
         used_optionals = set()
@@ -147,7 +143,7 @@ class ShellLSP:
         # ==========================
         def add(tok: LexToken, style: str):
             semantic_tokens.append(
-                SyntaxToken(tok.start, tok.length, style)
+                SemanticToken(tok.start, tok.length, style)
             )
 
         # ==========================
@@ -224,11 +220,11 @@ class ShellLSP:
                     add(t, "SYNTAX_ERROR")
                     continue
 
-                if not getattr(arg, "repeatable", True) and arg in used_optionals:
+                if not getattr(arg, "repeatable", True) and id(arg) in used_optionals:
                     add(t, "SYNTAX_ERROR")
                     continue
 
-                used_optionals.add(arg)
+                used_optionals.add(id(arg))
                 add(t, "SYNTAX_FLAG")
 
                 if getattr(arg, "takes_value", False):

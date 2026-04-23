@@ -5,7 +5,7 @@ from helpers.text_utils.lexer import lex
 
 if t.TYPE_CHECKING:
     from sshserver.session.syntax_highlight import StyleContext
-    from .types import SyntaxToken
+    from helpers.lsp.json_rpc_proto import SemanticTokens
 
 import logging
 logger = logging.getLogger(__name__)
@@ -62,106 +62,123 @@ def char_class(g: str) -> str:
 def get_style(style_ctx: StyleContext, key: str) -> str:
     return style_ctx.get(key.upper())
 
+# Константа уровня модуля — не пересоздаётся каждый вызов
+_KIND_TO_STYLE: dict[str, str] = {
+    "command":         "SYNTAX_COMMAND",
+    "flag":            "SYNTAX_FLAG",
+    "key":             "SYNTAX_KEY",
+    "operator":        "SYNTAX_OPERATOR",
+    "string":          "SYNTAX_STRING",
+    "string_unclosed": "SYNTAX_WARNING",
+    "comment":         "SYNTAX_COMMENT",
+    "env":             "SYNTAX_ENV",
+    "number":          "SYNTAX_NUMBER",
+    "bool":            "SYNTAX_BOOL",
+    "null":            "SYNTAX_NULL",
+    "path":            "SYNTAX_PATH",
+    "word":            "SYNTAX_DEFAULT",
+    "ws":              "SYNTAX_WS",
+}
+
+
 def highlight_buffer(
     buffer: list[str],
     style_ctx: StyleContext,
-    semantic_tokens: list[SyntaxToken] | None = None,
-) -> list[tuple[str, str]]:          # list of (run_text, ansi_style)
+    semantic_tokens: SemanticTokens | None = None,
+) -> list[tuple[str, str]]:
     if not buffer:
         return []
 
-    # ================================================
-    # 1. БАЗОВАЯ ПОДСВЕТКА ЧЕРЕЗ LEXER (новое!)
-    # ================================================
-    
-
-    def _kind_to_style(kind: str) -> str:
-        mapping = {
-            "command":          "SYNTAX_COMMAND",
-            "flag":             "SYNTAX_FLAG",
-            "key":              "SYNTAX_KEY",
-            "operator":         "SYNTAX_OPERATOR",
-            "string":           "SYNTAX_STRING",
-            "string_unclosed":  "SYNTAX_WARNING",
-            "comment":          "SYNTAX_COMMENT",
-            "env":              "SYNTAX_ENV",
-            "number":           "SYNTAX_NUMBER",
-            "bool":             "SYNTAX_BOOL",
-            "null":             "SYNTAX_NULL",
-            "path":             "SYNTAX_PATH",
-            "word":             "SYNTAX_DEFAULT",
-            "ws":               "SYNTAX_WS",
-        }
-        return mapping.get(kind, "SYNTAX_DEFAULT")
-
     lex_tokens = lex("".join(buffer))
-
-    styled: list[tuple[str, str, str]] = []  # (char, style_name, ansi)
-    for token in lex_tokens:
-        style_name = _kind_to_style(token.kind)
-        ansi = style_ctx.get(style_name)
-        for ch in token.text:                    # token.text уже joined graphemes
-            styled.append((ch, style_name, ansi))
-
-    # ================================================
-    # 2. НАКЛАДЫВАЕМ СЕМАНТИКУ ИЗ SHELL_LSP
-    # ================================================
-    if not semantic_tokens:
-        final = [(ch, ansi) for ch, _, ansi in styled]
-    else:
-        logger.debug(semantic_tokens)
-
-        final: list[tuple[str, str]] = []
-        sem_idx = 0
-        num_sem = len(semantic_tokens)
-
-        for pos in range(len(styled)):
-            ch, base_name, base_ansi = styled[pos]
-
-            # двигаем указатель семантики
-            while (
-                sem_idx < num_sem
-                and semantic_tokens[sem_idx].start + semantic_tokens[sem_idx].length <= pos
-            ):
-                sem_idx += 1
-
-            applied = False
-            if sem_idx < num_sem:
-                tok = semantic_tokens[sem_idx]
-                if tok.start <= pos < tok.start + tok.length:
-                    sem_name = tok.style
-                    sem_ansi = style_ctx.get(sem_name)
-
-                    base_prio = STYLE_PRIORITY.get(base_name, 0)
-                    sem_prio = STYLE_PRIORITY.get(sem_name, 0)
-
-                    if base_name != "SYNTAX_WS" and sem_prio >= base_prio:
-                        final.append((ch, sem_ansi))
-                        applied = True
-
-            if not applied:
-                final.append((ch, base_ansi))
-
-        #logger.debug(final)
-
-    # ================================================
-    # 3. ГРУППИРУЕМ В RUNS
-    # ================================================
-    if not final:
+    if not lex_tokens:
         return []
 
-    runs: list[tuple[str, str]] = []
-    current_text: list[str] = [final[0][0]]
-    current_ansi = final[0][1]
+    # ── Шаг 1: резолвим ANSI для каждого токена лексера ──────────────────
+    # (pos, length, base_style_name, base_ansi)
+    # pos — символьная позиция в буфере
+    resolved: list[tuple[int, int, str, str]] = []
+    pos = 0
+    for token in lex_tokens:
+        style_name = _KIND_TO_STYLE.get(token.kind, "SYNTAX_DEFAULT")
+        ansi = style_ctx.get(style_name)
+        length = len(token.text)
+        resolved.append((pos, length, style_name, ansi))
+        pos += length
 
-    for ch, ansi in final[1:]:
-        if ansi == current_ansi:
-            current_text.append(ch)
-        else:
-            runs.append(("".join(current_text), current_ansi))
-            current_text = [ch]
-            current_ansi = ansi
+    if not semantic_tokens:
+        # Нет семантики — сразу группируем в runs без промежуточных структур
+        runs: list[tuple[str, str]] = []
+        joined = "".join(buffer)
+        for tok_pos, tok_len, _, ansi in resolved:
+            chunk = joined[tok_pos : tok_pos + tok_len]
+            if runs and runs[-1][1] == ansi:
+                runs[-1] = (runs[-1][0] + chunk, ansi)
+            else:
+                runs.append((chunk, ansi))
+        return runs
 
-    runs.append(("".join(current_text), current_ansi))
-    logger.debug(runs)
+    # ── Шаг 2: merge семантики — по токенам, не по символам ──────────────
+
+    joined = "".join(buffer)
+    runs = []
+    sem_idx = 0
+    num_sem = len(semantic_tokens)
+
+    for tok_pos, tok_len, base_name, base_ansi in resolved:
+        tok_end = tok_pos + tok_len
+        is_ws = base_name == "SYNTAX_WS"
+
+        # Advance sem_idx до первого токена который может перекрываться
+        while sem_idx < num_sem and semantic_tokens[sem_idx].start + semantic_tokens[sem_idx].length <= tok_pos:
+            sem_idx += 1
+
+        # Собираем все семантические токены пересекающиеся с текущим лексером
+        # (их обычно 0–2, не нужен вложенный цикл на символы)
+        cursor = tok_pos
+        si = sem_idx  # локальная копия — не двигаем sem_idx внутри токена
+
+        while cursor < tok_end:
+            if not is_ws and si < num_sem:
+                sem = semantic_tokens[si]
+                sem_end = sem.start + sem.length
+
+                if sem.start > cursor:
+                    # Зазор до начала semantic — рисуем base
+                    chunk_end = min(sem.start, tok_end)
+                    _append_run(runs, joined[cursor:chunk_end], base_ansi)
+                    cursor = chunk_end
+                    continue
+
+                if sem.start <= cursor < sem_end:
+                    # Внутри semantic диапазона
+                    sem_ansi = style_ctx.get(sem.style)
+                    base_prio = STYLE_PRIORITY.get(base_name, 0)
+                    sem_prio  = STYLE_PRIORITY.get(sem.style, 0)
+
+                    if sem_prio >= base_prio:
+                        chunk_end = min(sem_end, tok_end)
+                        _append_run(runs, joined[cursor:chunk_end], sem_ansi)
+                    else:
+                        chunk_end = min(sem_end, tok_end)
+                        _append_run(runs, joined[cursor:chunk_end], base_ansi)
+
+                    cursor = chunk_end
+                    if cursor >= sem_end:
+                        si += 1
+                    continue
+
+            # Нет покрытия — остаток токена базовым стилем
+            _append_run(runs, joined[cursor:tok_end], base_ansi)
+            break
+
     return runs
+
+
+def _append_run(runs: list[tuple[str, str]], text: str, ansi: str) -> None:
+    """Добавляет chunk в runs, объединяя с предыдущим если стиль совпадает."""
+    if not text:
+        return
+    if runs and runs[-1][1] == ansi:
+        runs[-1] = (runs[-1][0] + text, ansi)
+    else:
+        runs.append((text, ansi))

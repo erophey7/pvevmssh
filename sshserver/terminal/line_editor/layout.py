@@ -11,10 +11,17 @@ from helpers.text_utils.char_tools import split_graphemes
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .types import SyntaxToken
+    from helpers.lsp.json_rpc_proto import SemanticTokens
     from sshserver.session.syntax_highlight import StyleContext
 
 logger = logging.getLogger(__name__)
+
+
+def _iter_graphemes(text: str):
+    """Fast-path для чистого ASCII — пропускает split_graphemes."""
+    if text.isascii():
+        return iter(text)
+    return split_graphemes(text)
 
 
 def build_layout(
@@ -27,13 +34,15 @@ def build_layout(
     completion_index: int | None = None,
     inline_hint: str | None = None,
     style_ctx: StyleContext = None,
-    semantic_tokens: list["SyntaxToken"] | None = None,
+    semantic_tokens: SemanticTokens | None = None,
 ) -> Layout:
     term_width = max(1, term_width or 80)
     term_height = max(24, term_height or 24)
 
     rows: list[list[VisualCell]] = [[]]
-    index_to_pos: list[ScreenPos] = []
+
+    # Pre-allocate index_to_pos на весь буфер сразу — O(n) вместо O(n²)
+    index_to_pos: list[ScreenPos] = [ScreenPos(0, 1)] * len(buffer)
 
     row = 0
     col = 1
@@ -52,8 +61,6 @@ def build_layout(
 
         rows[row].append(VisualCell(text, width, buffer_index, style, highlight))
         if buffer_index is not None:
-            while len(index_to_pos) <= buffer_index:
-                index_to_pos.append(ScreenPos(0, 1))
             index_to_pos[buffer_index] = ScreenPos(row, col)
 
         col += width
@@ -61,21 +68,21 @@ def build_layout(
     # PROMPT
     for seg in prompt_segments:
         if seg.visible:
-            for g in split_graphemes(seg.text):
+            for g in _iter_graphemes(seg.text):
                 push_cell(g, char_width(g), None)
         else:
             rows[row].append(VisualCell(seg.text, 0, None))
 
-    # BUFFER + SYNTAX HIGHLIGHT (теперь runs)
+    # BUFFER + SYNTAX HIGHLIGHT
     styled_runs = highlight_buffer(
-        buffer=buffer, 
-        style_ctx=style_ctx, 
+        buffer=buffer,
+        style_ctx=style_ctx,
         semantic_tokens=semantic_tokens
     )
 
     buf_idx = 0
     for run_text, style in styled_runs:
-        for g in split_graphemes(run_text):
+        for g in _iter_graphemes(run_text):
             push_cell(g, char_width(g), buf_idx, style=style)
             buf_idx += 1
 
@@ -89,33 +96,38 @@ def build_layout(
     # === INLINE HINT ===
     if inline_hint and cursor == len(buffer):
         hint_style = style_ctx.get("INLINE_HINT")
-        for g in split_graphemes(inline_hint):
+        for g in _iter_graphemes(inline_hint):
             push_cell(g, char_width(g), None, style=hint_style)
 
-    end_pos = ScreenPos(row + 1 if (col == term_width + 1) else row,
-                        1 if (col == term_width + 1) else col)
+    # pending_wrap пересчитывается после возможного добавления hint
+    pending_wrap = (col == term_width + 1)
+    end_pos = ScreenPos(row + 1 if pending_wrap else row,
+                        1     if pending_wrap else col)
 
-    # ==================== ANSI ДЛЯ СТРОКИ ВВОДА (оптимизировано) ====================
+    # ==================== ANSI ДЛЯ СТРОКИ ВВОДА ====================
     parts: list[str] = []
-    current_style = ""                     # "" = дефолт, не нужно сбрасывать
+    current_style = ""
 
     for visual_row in rows:
         for cell in visual_row:
+            # zero-width ячейки (invisible prompt segments) — текст не нужен
+            if not cell.text:
+                continue
+
             style = cell.style + ("\x1b[7m" if cell.highlight else "")
 
             if style == StyleConfig.RESET:
                 style = ""
 
             if style != current_style:
-                if current_style:          # сбрасываем предыдущий colored-ран
+                if current_style:
                     parts.append(StyleConfig.RESET)
-                if style:                  # красим только если есть цвет
+                if style:
                     parts.append(style)
                 current_style = style
 
             parts.append(cell.text)
 
-    # финальный сброс — только если закончили colored-раном
     if current_style:
         parts.append(StyleConfig.RESET)
 
@@ -127,34 +139,38 @@ def build_layout(
     menu_grid = (0, 0)
 
     if completions and completion_index is not None and len(completions) > 1:
-        max_len = max(len(cand) for cand in completions) + 3
-        available_width = term_width - (menu_start_col - 1)
-        num_cols = max(1, available_width // max_len)
+        # Переиспользуем compute_completion_grid_dims — единый источник правды
+        menu_rows, num_cols = compute_completion_grid_dims(
+            completions=completions,
+            term_width=term_width,
+            term_height=term_height,
+            start_row=end_pos.row + 1,
+            start_col=menu_start_col,
+        )
 
-        input_rows = end_pos.row + 1
-        max_menu_rows = max(1, term_height - input_rows - 1)
+        if menu_rows > 0:
+            max_len = max(len(c) for c in completions) + 3
 
-        num_rows_calc = (len(completions) + num_cols - 1) // num_cols
-        num_rows = min(num_rows_calc, max_menu_rows)
+            # Кешируем стили вне цикла
+            style_normal   = get_style(style_ctx, "COMPLETION")
+            style_selected = get_style(style_ctx, "COMPLETION_SELECTED")
 
-        menu_lines = []
-        for r in range(num_rows):
-            line_parts = []
-            for c_idx in range(num_cols):
-                idx = r * num_cols + c_idx
-                if idx < len(completions):
-                    cand = completions[idx]
-                    is_selected = idx == completion_index
-                    style = get_style(style_ctx, "COMPLETION_SELECTED" if is_selected else "COMPLETION")
-                    padded = cand.ljust(max_len - 2)
-                    line_parts.append(f"{style}{padded}{StyleConfig.RESET}")
-                else:
-                    line_parts.append(" " * (max_len - 2))
-            menu_lines.append("".join(line_parts))
-        menu_ansi = "\r\n".join(menu_lines)
-        menu_rows = len(menu_lines)
+            menu_lines = []
+            for r in range(menu_rows):
+                line_parts = []
+                for c_idx in range(num_cols):
+                    idx = r * num_cols + c_idx
+                    if idx < len(completions):
+                        cand = completions[idx]
+                        style = style_selected if idx == completion_index else style_normal
+                        padded = cand.ljust(max_len - 2)
+                        line_parts.append(f"{style}{padded}{StyleConfig.RESET}")
+                    else:
+                        line_parts.append(" " * (max_len - 2))
+                menu_lines.append("".join(line_parts))
 
-        menu_grid = (num_cols, menu_rows)
+            menu_ansi = "\r\n".join(menu_lines)
+            menu_grid = (num_cols, menu_rows)
 
     return Layout(
         rows=rows,
@@ -167,6 +183,7 @@ def build_layout(
         menu_start_col=menu_start_col,
         menu_grid=menu_grid,
     )
+
 
 def compute_completion_grid_dims(
     completions: list[str],
