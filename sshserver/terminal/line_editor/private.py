@@ -66,7 +66,7 @@ class LineEditorLogic:
     # ===============================================    
     async def reset_state(self) -> None:
         async with self.vpriv.lock:
-            self.internal.reset_state()
+            await self.internal.reset_state()
 
     # ===============================================
     # CURRENT LINE
@@ -111,14 +111,14 @@ class LineEditorLogic:
     # ===============================================    
     async def enter(self) -> str:
         async with self.vpriv.lock:
-            self.vpriv.last_layout = None
+            self.ui.clear_cache()
             await self.vpub.terminal.output.output_bytes(b"\r\n")
             line = "".join(self.vpriv.buffer)
 
             if line.strip():
                 self.vpub.history.add(line)
 
-            self.internal.reset_state()
+            await self.internal.reset_state()
             return line
         
     # ===============================================
@@ -182,9 +182,12 @@ class LineEditorLogic:
         async with self.vpriv.lock:
             if not self.vpriv.completions:
                 return
-            if self.vpriv.last_layout is None:
+            
+            layout = self.ui.get_last_layout()
+
+            if layout is None:
                 return
-            cols, _ = self.vpriv.last_layout.menu_grid
+            cols, _ = layout.menu_grid
             num = len(self.vpriv.completions)
 
             if self.vpriv.completion_index is None:
@@ -219,10 +222,13 @@ class LineEditorLogic:
         async with self.vpriv.lock:
             if not self.vpriv.completions:
                 return
+            
+            layout = self.ui.get_last_layout()
 
-            if self.vpriv.last_layout is None:
+            if layout is None:
                 return
-            cols, _ = self.vpriv.last_layout.menu_grid
+            
+            cols, _ = layout.menu_grid
             num = len(self.vpriv.completions)
 
             if self.vpriv.completion_index is None:
@@ -487,7 +493,7 @@ class LineEditorLogic:
 
     async def ctrlc_cancellation(self) -> str:
         async with self.vpriv.lock:
-            self.internal.reset_state()
+            await self.internal.reset_state()
             await self.ui.redraw()
             await self.vpub.terminal.output.output_bytes(b"^C\r\n")
             return ""

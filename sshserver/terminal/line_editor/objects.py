@@ -22,8 +22,6 @@ class LineEditorPrivateVars:
         self.cursor: int = 0
         self.prompt_segments: list[PromptSegment] | None = None
 
-        self.last_layout: Layout = None
-
         self.history_draft: list[str] | None = None
         self.history_navigation_active: bool = False
 
