@@ -260,7 +260,10 @@ class LineEditorLogic:
             num = len(self.vpriv.completions)
             if self.vpriv.completion_index is None:
                 self.vpriv.completion_index = 0
-            self.vpriv.completion_index = (self.vpriv.completion_index - 1) % num
+            idx = self.vpriv.completion_index - 1
+            if idx < 0:
+                idx = num - 1
+            self.vpriv.completion_index = idx
             await self.ui.redraw()
 
     async def menu_next(self) -> None:
@@ -270,7 +273,10 @@ class LineEditorLogic:
             num = len(self.vpriv.completions)
             if self.vpriv.completion_index is None:
                 self.vpriv.completion_index = 0
-            self.vpriv.completion_index = (self.vpriv.completion_index + 1) % num
+            idx = self.vpriv.completion_index + 1
+            if idx >= num:
+                idx = 0
+            self.vpriv.completion_index = idx
             await self.ui.redraw()
 
     # ===============================================

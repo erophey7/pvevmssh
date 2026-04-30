@@ -15,6 +15,20 @@ if TYPE_CHECKING:
 
 
 # =============================================
+# BACKGROUND TASK HELPERS
+# =============================================
+_background_tasks: set[asyncio.Task] = set()
+
+
+def _schedule_bg(coro) -> asyncio.Task:
+    """Запускает фоновую задачу с автоочисткой."""
+    task = asyncio.create_task(coro)
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+    return task
+
+
+# =============================================
 # CALLMANAGER
 # =============================================
 class CallManager:
@@ -55,6 +69,11 @@ class LineEditorUI:
         # Актуальна только в absolute diff mode (_cursor_abs is not None).
         self._anchor_row: int = 0
 
+        # Отслеживание позиции layout row=0 на экране, независимо от курсора.
+        # Исправляет баг: anchor_row выводился из cursor_pos, что ломалось
+        # при перемещении курсора между строками.
+        self._layout_anchor_row: int | None = None
+
     # =============================================
     # PUBLIC
     # =============================================
@@ -80,6 +99,7 @@ class LineEditorUI:
         self._task_id = 0
         self._cursor_abs = None
         self._anchor_row = 0
+        self._layout_anchor_row = None
         self._call_manager._pending = False
 
     # =============================================
@@ -198,7 +218,12 @@ class LineEditorUI:
         # Шаг 4: относительное перемещение к курсору
         # end_pos.row — строка layout где заканчивается контент (после меню)
         # cursor_pos.row — строка layout где должен стоять курсор
+        # ИСПРАВЛЕНИЕ: последняя строка меню не имеет \r\n после себя,
+        # поэтому курсор после отрисовки меню на 1 строку выше, чем
+        # menu_rows + menu_sep. Вычитаем 1, если меню есть.
         rows_up_to_cursor = layout.end_pos.row - layout.cursor_pos.row + menu_rows + menu_sep
+        if menu_rows > 0:
+            rows_up_to_cursor -= 1
         if rows_up_to_cursor > 0:
             out += f"\x1b[{rows_up_to_cursor}A".encode()
         out += f"\x1b[{layout.cursor_pos.col}G".encode()
@@ -219,11 +244,17 @@ class LineEditorUI:
         term_height = self.vpub.terminal.session.term_height
         start_row_0 = self._cursor_abs[0] - 1  # 0-based строка где начали рисовать
 
-        total_written = layout.end_pos.row + 1 + menu_sep + menu_rows
+        # ИСПРАВЛЕНИЕ: учитываем pending_wrap в подсчёте строк
+        # и корректируем: последняя строка меню без \r\n
+        wrap_adjust = 1 if layout.pending_wrap else 0
+        menu_adjust = -1 if menu_rows > 0 else 0
+        total_written = layout.end_pos.row + 1 + menu_sep + menu_rows + wrap_adjust + menu_adjust
         bottom_0      = start_row_0 + total_written - 1
         scrolled      = max(0, bottom_0 - (term_height - 1))
 
         self._anchor_row = max(0, start_row_0 - scrolled)
+        # ИСПРАВЛЕНИЕ: сохраняем позицию layout row=0, независимо от курсора
+        self._layout_anchor_row = self._anchor_row
         self._cursor_abs = (
             self._anchor_row + layout.cursor_pos.row + 1,
             layout.cursor_pos.col,
@@ -240,8 +271,13 @@ class LineEditorUI:
         term_height = self.vpub.terminal.session.term_height
 
         # Anchor: 0-based строка терминала = layout row 0
-        cursor_abs_0     = self._cursor_abs[0] - 1
-        self._anchor_row = cursor_abs_0 - self._last_layout.cursor_pos.row
+        # ИСПРАВЛЕНИЕ: используем сохранённый anchor вместо вычисления из cursor_pos
+        if self._layout_anchor_row is not None:
+            self._anchor_row = self._layout_anchor_row
+        else:
+            # Fallback для первого рендера после CPR
+            cursor_abs_0     = self._cursor_abs[0] - 1
+            self._anchor_row = cursor_abs_0 - self._last_layout.cursor_pos.row
         self._anchor_row = max(0, self._anchor_row)
 
         # Не даём layout вылезти за нижний край терминала
@@ -263,6 +299,8 @@ class LineEditorUI:
         bottom_0 = self._anchor_row + total - 1
         scrolled  = max(0, bottom_0 - (term_height - 1))
         self._anchor_row = max(0, self._anchor_row - scrolled)
+        # ИСПРАВЛЕНИЕ: сохраняем позицию layout row=0
+        self._layout_anchor_row = self._anchor_row
         self._cursor_abs = (
             self._anchor_row + layout.cursor_pos.row + 1,
             layout.cursor_pos.col,
