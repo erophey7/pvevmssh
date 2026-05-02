@@ -215,6 +215,24 @@ class LSPRequestManager:
 # ADAPTER
 # ======================================================
 class LSPAdapter:
+    """Адаптер LSP с отслеживанием фоновых задач."""
+
+    _bg_tasks: set[asyncio.Task] = set()
+
+    @classmethod
+    def _schedule_background(cls, coro) -> asyncio.Task:
+        """Запускает фоновую задачу с автоочисткой по завершении.
+
+        Предотвращает:
+        - Потерю ссылки на задачу (garbage collection)
+        - Накопление завершённых задач в памяти
+        - Невозможность отследить выполняющиеся запросы
+        """
+        task = asyncio.create_task(coro)
+        cls._bg_tasks.add(task)
+        task.add_done_callback(cls._bg_tasks.discard)
+        return task
+
     def __init__(self, vpriv: LineEditorPrivateVars, vpub: LineEditorPublicVars, ui: LineEditorUI):
         self.connector: InCodeLSPConnector = None
         self.lsp: LSPRequestManager | None = None
@@ -280,7 +298,7 @@ class LSPAdapter:
             if local_gen == self.vpriv.lsp_semantic_generation:
                 await self.ui.redraw()
 
-        asyncio.create_task(worker(gen))
+        self._schedule_background(worker(gen))
 
     # ======================================================
     # TAB COMPLETION
@@ -363,7 +381,7 @@ class LSPAdapter:
             self.vpriv.inline_hint = hint
             await self.ui.redraw()
 
-        asyncio.create_task(worker())
+        self._schedule_background(worker())
 
     # ======================================================
     # MENU ACCEPT

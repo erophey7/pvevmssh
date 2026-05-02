@@ -3,6 +3,7 @@ if TYPE_CHECKING:
     from .objects import LineEditorPrivateVars, LineEditorPublicVars
     from .private import LineEditorLogic
 
+import re
 import logging
 
 logger = logging.getLogger(__name__)
@@ -13,12 +14,12 @@ class LineEditorPrivateInternal:
         self.vpub: LineEditorPublicVars = vpub
         self.parent: LineEditorLogic = parent
 
-    def reset_state(self) -> None:
+    async def reset_state(self) -> None:
         self.vpriv.buffer.clear()
         self.menu_hide()
         self.vpriv.cursor = 0
         self.vpriv.prompt_segments = None
-        self.vpriv.last_layout = None
+        self.parent.ui.clear_cache()
         self.vpriv.history_draft = None
         self.vpriv.history_navigation_active = False
         self.vpriv.quoted_insert = False

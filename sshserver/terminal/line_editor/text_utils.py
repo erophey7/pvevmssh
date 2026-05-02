@@ -109,12 +109,13 @@ def highlight_buffer(
         # Нет семантики — сразу группируем в runs без промежуточных структур
         runs: list[tuple[str, str]] = []
         joined = "".join(buffer)
+        _append = runs.append  # локальный биндинг ускоряет вызов
         for tok_pos, tok_len, _, ansi in resolved:
             chunk = joined[tok_pos : tok_pos + tok_len]
             if runs and runs[-1][1] == ansi:
                 runs[-1] = (runs[-1][0] + chunk, ansi)
             else:
-                runs.append((chunk, ansi))
+                _append((chunk, ansi))
         return runs
 
     # ── Шаг 2: merge семантики — по токенам, не по символам ──────────────
@@ -152,8 +153,10 @@ def highlight_buffer(
                 if sem.start <= cursor < sem_end:
                     # Внутри semantic диапазона
                     sem_ansi = style_ctx.get(sem.style)
-                    base_prio = STYLE_PRIORITY.get(base_name, 0)
-                    sem_prio  = STYLE_PRIORITY.get(sem.style, 0)
+                    # Локальный биндинг для ускорения (dict.get в hot loop)
+                    _get_prio = STYLE_PRIORITY.get
+                    base_prio = _get_prio(base_name, 0)
+                    sem_prio  = _get_prio(sem.style, 0)
 
                     if sem_prio >= base_prio:
                         chunk_end = min(sem_end, tok_end)

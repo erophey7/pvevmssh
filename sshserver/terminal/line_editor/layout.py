@@ -42,7 +42,7 @@ def build_layout(
     rows: list[list[VisualCell]] = [[]]
 
     # Pre-allocate index_to_pos на весь буфер сразу — O(n) вместо O(n²)
-    index_to_pos: list[ScreenPos] = [ScreenPos(0, 1)] * len(buffer)
+    index_to_pos: list[ScreenPos] = [ScreenPos(0, 1) for _ in range(len(buffer))]
 
     row = 0
     col = 1
