@@ -1,6 +1,9 @@
 from .layout import build_layout
 from sshserver.session.prompt import get_prompt_segments
+from .types import Layout
 
+import re
+import asyncio
 import logging
 logger = logging.getLogger(__name__)
 
@@ -9,115 +12,419 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from .objects import LineEditorPrivateVars, LineEditorPublicVars
     from sshserver.session.types import PromptSegment
+    
 
 
+# =============================================
+# BACKGROUND TASK HELPERS
+# =============================================
+_background_tasks: set[asyncio.Task] = set()
+
+
+def _schedule_bg(coro) -> asyncio.Task:
+    """Запускает фоновую задачу с автоочисткой."""
+    task = asyncio.create_task(coro)
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+    return task
+
+
+# =============================================
+# CALLMANAGER
+# =============================================
+class CallManager:
+    def __init__(self, trigger):
+        self._pending: bool = False
+        self._trigger = trigger
+        self._debounce_time: float = 0.003
+
+    def request(self):
+        if not self._pending:
+            self._pending = True
+            asyncio.create_task(self._debounce())
+
+    async def _debounce(self):
+        await asyncio.sleep(self._debounce_time)
+        self._pending = False
+        await self._trigger()
+
+
+# =============================================
+# UI
+# =============================================
 class LineEditorUI:
-    def __init__(self, vpriv: LineEditorPrivateVars, vpub: LineEditorPublicVars):
+    def __init__(self, vpriv: "LineEditorPrivateVars", vpub: "LineEditorPublicVars"):
         self.vpriv = vpriv
         self.vpub = vpub
 
-    def cache_prompt_segments(self) -> list[PromptSegment]:
+        self._last_layout: "Layout | None" = None
+        self._task_id: int = 0
+        self._call_manager = CallManager(self._render_pipeline)
+
+        self._cursor_abs: tuple[int, int] | None = None
+        self._anchor_row: int = 0
+        self._layout_anchor_row: int | None = None
+
+        # --- scroll viewport (0 = layout row 0 прижат к верху экрана) ---
+        self._scroll_offset: int = 0
+        self._last_scroll_offset: int = 0
+
+    # =============================================
+    # PUBLIC
+    # =============================================
+    async def redraw(self) -> None:
+        self._call_manager.request()
+
+    async def move_cursor_only_or_redraw(self) -> None:
+        self._call_manager.request()
+
+    async def clear_screen_and_redraw(self) -> None:
+        if self.vpub.echo:
+            await self.vpub.terminal.output.output_bytes(b"\x1b[2J\x1b[H")
+        self._last_layout = None
+        self._cursor_abs = (1, 1)
+        self._anchor_row = 0
+        self._scroll_offset = 0
+        self._last_scroll_offset = 0
+        self._call_manager.request()
+
+    def get_last_layout(self) -> "Layout | None":
+        return self._last_layout
+
+    def clear_cache(self) -> None:
+        self._last_layout = None
+        self._task_id = 0
+        self._cursor_abs = None
+        self._anchor_row = 0
+        self._layout_anchor_row = None
+        self._scroll_offset = 0
+        self._last_scroll_offset = 0
+        self._call_manager._pending = False
+
+    # =============================================
+    # PROMPT
+    # =============================================
+    def cache_prompt_segments(self) -> list["PromptSegment"]:
         if self.vpriv.prompt_segments is None:
             self.vpriv.prompt_segments = get_prompt_segments(self.vpub.terminal.session)
         return self.vpriv.prompt_segments
 
-    async def redraw(self) -> None:
-        layout = build_layout(
-            prompt_segments=self.cache_prompt_segments(),
-            buffer=self.vpriv.buffer,
-            cursor=self.vpriv.cursor,
-            term_width=self.vpub.terminal.session.term_width,
-            term_height=self.vpub.terminal.session.term_height,
-            completions=self.vpriv.completions,
-            completion_index=self.vpriv.completion_index,
-            inline_hint=self.vpriv.inline_hint,
-            style_ctx=self.vpub.style_ctx,
-            semantic_tokens=self.vpriv.semantic_tokens,
-        )
+    # =============================================
+    # SNAPSHOT
+    # =============================================
+    def _make_snapshot(self) -> dict:
+        return {
+            "prompt_segments": self.cache_prompt_segments(),
+            "buffer": self.vpriv.buffer.copy(),
+            "cursor": self.vpriv.cursor,
+            "term_width": self.vpub.terminal.session.term_width,
+            "term_height": self.vpub.terminal.session.term_height,
+            "completions": self.vpriv.completions,
+            "completion_index": self.vpriv.completion_index,
+            "inline_hint": self.vpriv.inline_hint,
+            "style_ctx": self.vpub.style_ctx,
+            "semantic_tokens": self.vpriv.semantic_tokens,
+        }
+
+    # =============================================
+    # TASK
+    # =============================================
+    def _next_task_id(self) -> int:
+        self._task_id += 1
+        return self._task_id
+
+    # =============================================
+    # SCROLL / VIEWPORT
+    # =============================================
+    def _update_scroll(self, layout: "Layout") -> None:
+        """Сдвигает viewport так, чтобы курсор оставался видимым на экране."""
+        term_height = self.vpub.terminal.session.term_height
+        cursor_row = layout.cursor_pos.row
+        layout_rows = layout.end_pos.row + 1          # сколько строк занимает layout
+        menu_rows = layout.menu_grid[1] if layout.menu_ansi else 0
+        menu_sep = 1 if menu_rows else 0
+        total = layout_rows + menu_sep + menu_rows
+
+        if total <= term_height:
+            self._scroll_offset = 0
+            return
+
+        margin = 1
+
+        if cursor_row < self._scroll_offset + margin:
+            self._scroll_offset = max(0, cursor_row - margin)
+        elif cursor_row >= self._scroll_offset + term_height - margin:
+            self._scroll_offset = cursor_row - term_height + 1 + margin
+
+        max_scroll = max(0, total - term_height)
+        self._scroll_offset = max(0, min(self._scroll_offset, max_scroll))
+
+    # =============================================
+    # PIPELINE
+    # =============================================
+    async def _render_pipeline(self):
+        task_id = self._next_task_id()
+        snapshot = self._make_snapshot()
+        layout = build_layout(**snapshot)
+
+        if task_id != self._task_id:
+            return
+
+        use_abs = self._cursor_abs is not None and self._last_layout is not None
+
+        if use_abs:
+            out = self._render_diff(layout)
+        else:
+            out = self._render_relative(layout)
+
+        if self.vpub.echo and out:
+            await self.vpub.terminal.output.output_bytes(out)
+
+        self._last_layout = layout
+
+    # =============================================
+    # РЕЖИМ 1: RELATIVE RENDER
+    # =============================================
+    def _render_relative(self, layout: "Layout") -> bytes:
+        term_height = self.vpub.terminal.session.term_height
+        layout_rows = layout.end_pos.row + 1
+        menu_rows = layout.menu_grid[1] if layout.menu_ansi else 0
+        menu_sep = 1 if menu_rows else 0
+        total = layout_rows + menu_sep + menu_rows
+
+        # Если layout не влезает — форсируем absolute scroll mode
+        if total > term_height:
+            out = b"\x1b[2J\x1b[H"
+            self._last_layout = Layout()
+            self._cursor_abs = (1, 1)
+            self._anchor_row = 0
+            self._layout_anchor_row = 0
+            self._scroll_offset = 0
+            self._last_scroll_offset = 0
+            out += self._render_diff(layout)
+            return out
 
         out = b""
 
-        if self.vpriv.last_layout is not None and self.vpriv.last_layout.cursor_pos.row > 0:
-            out += f"\x1b[{self.vpriv.last_layout.cursor_pos.row}A".encode()
+        # Шаг 1: поднимаемся к началу прошлого layout
+        if self._last_layout is not None:
+            rows_up = self._last_layout.cursor_pos.row
+            if rows_up > 0:
+                out += f"\x1b[{rows_up}A".encode()
 
+        # Шаг 2: в начало строки + очистить до конца экрана
         out += b"\r\x1b[J"
+
+        # Шаг 3: рисуем layout
         out += layout.rendered_ansi.encode("utf-8", errors="replace")
 
         if layout.pending_wrap:
             out += b"\r\n"
 
+        menu_rows = layout.menu_grid[1] if layout.menu_ansi else 0
+        menu_sep  = 1 if menu_rows else 0
+
         if layout.menu_ansi:
             out += b"\r\n"
             lines = layout.menu_ansi.split("\r\n")
             for i, line in enumerate(lines):
-                if layout.menu_start_col > 1:
-                    out += f"\x1b[{layout.menu_start_col}G".encode()
                 out += line.encode("utf-8", errors="replace")
                 if i < len(lines) - 1:
                     out += b"\r\n"
 
-        _, menu_height = layout.menu_grid 
-
-        extra = menu_height if layout.menu_ansi else 0
-        rows_up = layout.end_pos.row - layout.cursor_pos.row + extra
-
-        if rows_up > 0:
-            out += f"\x1b[{rows_up}A".encode()
-
+        # Шаг 4: относительное перемещение к курсору
+        rows_up_to_cursor = layout.end_pos.row - layout.cursor_pos.row + menu_rows + menu_sep
+        if menu_rows > 0:
+            rows_up_to_cursor -= 1
+        if rows_up_to_cursor > 0:
+            out += f"\x1b[{rows_up_to_cursor}A".encode()
         out += f"\x1b[{layout.cursor_pos.col}G".encode()
 
-        self.vpriv.last_layout = layout
+        out += b"\x1b[0m"
 
-        if self.vpub.echo:
-            await self.vpub.terminal.output.output_bytes(out)
+        if self._cursor_abs is not None:
+            self._update_abs_after_relative(layout, menu_rows, menu_sep)
 
-    async def move_cursor_only_or_redraw(self) -> None:
-        if self.vpriv.last_layout is None:
-            await self.redraw()
-            return
+        return out
 
-        new_layout = build_layout(
-            prompt_segments=self.cache_prompt_segments(),
-            buffer=self.vpriv.buffer,
-            cursor=self.vpriv.cursor,
-            term_width=self.vpub.terminal.session.term_width,
-            term_height=self.vpub.terminal.session.term_height,
-            completions=self.vpriv.completions,
-            completion_index=self.vpriv.completion_index,
-            inline_hint=self.vpriv.inline_hint,
-            style_ctx=self.vpub.style_ctx,
-            semantic_tokens=self.vpriv.semantic_tokens,
+    def _update_abs_after_relative(
+        self, layout: "Layout", menu_rows: int, menu_sep: int
+    ) -> None:
+        term_height = self.vpub.terminal.session.term_height
+        start_row_0 = self._cursor_abs[0] - 1
+
+        wrap_adjust = 1 if layout.pending_wrap else 0
+        menu_adjust = -1 if menu_rows > 0 else 0
+        total_written = layout.end_pos.row + 1 + menu_sep + menu_rows + wrap_adjust + menu_adjust
+        bottom_0 = start_row_0 + total_written - 1
+        scrolled = max(0, bottom_0 - (term_height - 1))
+
+        self._anchor_row = max(0, start_row_0 - scrolled)
+        self._layout_anchor_row = self._anchor_row
+        self._cursor_abs = (
+            self._anchor_row + layout.cursor_pos.row + 1,
+            layout.cursor_pos.col,
         )
 
-        if (
-            new_layout.rendered_ansi != self.vpriv.last_layout.rendered_ansi
-            or new_layout.pending_wrap != self.vpriv.last_layout.pending_wrap
-            or len(new_layout.rows) != len(self.vpriv.last_layout.rows)
-            or new_layout.menu_ansi != self.vpriv.last_layout.menu_ansi
-        ):
-            await self.redraw()
-            return
+    # =============================================
+    # РЕЖИМ 2: ABSOLUTE DIFF RENDER (со скроллом)
+    # =============================================
+    def _render_diff(self, layout: "Layout") -> bytes:
+        self._update_scroll(layout)
 
+        # anchor определяется исключительно scroll_offset
+        self._anchor_row = -self._scroll_offset
+        self._layout_anchor_row = self._anchor_row
+
+        force_redraw = self._last_scroll_offset != self._scroll_offset
+        self._last_scroll_offset = self._scroll_offset
+
+        ops = self._diff_layouts(self._last_layout, layout, force_redraw)
+        ops += self._menu_ops(self._last_layout, layout, force_redraw)
+        ops.append(("cursor", layout.cursor_pos))
+
+        out = self._render_ops(ops, layout)
+
+        cursor_screen_row = layout.cursor_pos.row - self._scroll_offset
+        self._cursor_abs = (
+            max(1, cursor_screen_row + 1),
+            layout.cursor_pos.col,
+        )
+
+        return out
+
+    # =============================================
+    # DIFF
+    # =============================================
+    def _diff_layouts(self, old: "Layout", new: "Layout", force_redraw: bool = False) -> list:
+        ops = []
+        max_rows = max(len(old.rows), len(new.rows))
+        term_height = self.vpub.terminal.session.term_height
+
+        for i in range(max_rows):
+            old_row = old.rows[i] if i < len(old.rows) else None
+            new_row = new.rows[i] if i < len(new.rows) else None
+
+            screen_row = self._anchor_row + i
+            visible = 0 <= screen_row < term_height
+
+            if new_row is None:
+                if visible:
+                    ops.append(("clear_row", i))
+            elif old_row != new_row or force_redraw:
+                if visible:
+                    ops.append(("draw_row", i, new_row))
+
+        return ops
+
+    # =============================================
+    # MENU OPS
+    # =============================================
+    def _menu_ops(self, old: "Layout", new: "Layout", force_redraw: bool = False) -> list:
+        ops = []
+        menu_base_abs = self._anchor_row + len(new.rows)
+        term_height = self.vpub.terminal.session.term_height
+
+        old_lines = old.menu_ansi.split("\r\n") if old.menu_ansi else []
+        new_lines = new.menu_ansi.split("\r\n") if new.menu_ansi else []
+
+        max_lines = max(len(old_lines), len(new_lines))
+
+        for i in range(max_lines):
+            abs_row = menu_base_abs + i
+            visible = 0 <= abs_row < term_height
+            old_line = old_lines[i] if i < len(old_lines) else None
+            new_line = new_lines[i] if i < len(new_lines) else None
+
+            if new_line is None:
+                if visible:
+                    ops.append(("clear_abs", abs_row))
+            elif old_line != new_line or force_redraw:
+                if visible:
+                    ops.append(("draw_menu", abs_row, new_line))
+
+        return ops
+
+    # =============================================
+    # RENDER OPS
+    # =============================================
+    def _render_ops(self, ops: list, layout: "Layout" = None) -> bytes:
         out = b""
-        old = self.vpriv.last_layout.cursor_pos
-        new = new_layout.cursor_pos
+        current_style = None
+        term_height = self.vpub.terminal.session.term_height
 
-        row_delta = old.row - new.row
-        if row_delta > 0:
-            out += f"\x1b[{row_delta}A".encode()
-        elif row_delta < 0:
-            out += f"\x1b[{-row_delta}B".encode()
+        for op in ops:
+            if op[0] == "draw_row":
+                _, row_idx, row = op
+                screen_row = self._anchor_row + row_idx
+                if screen_row < 0 or screen_row >= term_height:
+                    continue
+                out += f"\x1b[{screen_row + 1};1H".encode()
+                out += b"\x1b[2K"
+                for cell in row:
+                    if not cell.text:
+                        continue
+                    cell_style = cell.style or ""
+                    if cell_style != current_style:
+                        if current_style:
+                            out += b"\x1b[0m"
+                        if cell_style:
+                            out += cell_style.encode()
+                        current_style = cell_style
+                    out += cell.text.encode("utf-8", "replace")
 
-        out += f"\x1b[{new.col}G".encode()
+            elif op[0] == "clear_row":
+                _, row_idx = op
+                screen_row = self._anchor_row + row_idx
+                if screen_row < 0 or screen_row >= term_height:
+                    continue
+                out += f"\x1b[{screen_row + 1};1H".encode()
+                out += b"\x1b[2K"
 
-        self.vpriv.last_layout = new_layout
+            elif op[0] == "clear_abs":
+                _, abs_row = op
+                if abs_row < 0 or abs_row >= term_height:
+                    continue
+                out += f"\x1b[{abs_row + 1};1H".encode()
+                out += b"\x1b[2K"
 
-        if self.vpub.echo and out:
-            await self.vpub.terminal.output.output_bytes(out)
+            elif op[0] == "draw_menu":
+                _, abs_row, text = op
+                if abs_row < 0 or abs_row >= term_height:
+                    continue
+                out += f"\x1b[{abs_row + 1};1H".encode()
+                out += b"\x1b[2K"
+                out += text.encode("utf-8", "replace")
 
+            elif op[0] == "cursor":
+                _, pos = op
+                screen_row = self._anchor_row + pos.row
+                if 0 <= screen_row < term_height:
+                    out += f"\x1b[{screen_row + 1};{pos.col}H".encode()
 
-    async def clear_screen_and_redraw(self) -> None:
-        if self.vpub.echo:
-            await self.vpub.terminal.output.output_bytes(b"\x1b[2J\x1b[H]")
-        self.vpriv.last_layout = None
-        await self.redraw()
+        if out:
+            out += b"\x1b[0m"
+
+        return out
+
+    # =============================================
+    # CPR
+    # =============================================
+    async def request_cursor_position(self) -> None:
+        if not self.vpub.echo:
+            return
+        await self.vpub.terminal.output.output_bytes(b"\x1b[6n")
+        try:
+            response = await self.vpub.terminal.input.read_until(b"R", timeout=0.05)
+        except Exception:
+            logger.debug("CPR timeout")
+            return
+        if not response:
+            return
+        match = re.search(rb"\x1b\[(\d+);(\d+)R", response)
+        if not match:
+            return
+        row = int(match.group(1))
+        col = int(match.group(2))
+        self._cursor_abs = (row, col)
+        logger.debug("CPR: row=%d col=%d", row, col)

@@ -1,6 +1,7 @@
 import typing as t
 import logging
 import asyncio
+from typing import Optional
 
 from .line_editor.public import LineEditor
 from .mouse_handler import MouseHandler
@@ -72,6 +73,33 @@ class InputHandler:
 
     async def on_terminal_resize(self) -> None:
         await self.editor.on_terminal_resize()
+
+    async def read_until(self, suffix: bytes, timeout: float = 0.01) -> Optional[bytes]:
+        """
+        Читает из input_queue пока не встретит suffix.
+        Возвращает все накопленные байты включая suffix.
+        """
+
+        buffer = bytearray()
+
+        try:
+            while True:
+                chunk = await asyncio.wait_for(
+                    self.terminal.input_queue.get(),
+                    timeout=timeout
+                )
+
+                if chunk is None:
+                    return None
+
+                buffer.extend(chunk)
+
+                if suffix in buffer:
+                    return bytes(buffer)
+
+        except asyncio.TimeoutError:
+            # timeout — возвращаем то что есть или None
+            return bytes(buffer) if buffer else None
 
     # =========================================================
     # Parser registration (runtime)
