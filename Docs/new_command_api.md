@@ -1,8 +1,7 @@
 # Документация API команд PVE SSH Server
 
-**Версия документации:** 2.0 (март 2026)  
+**Версия документации:** 3.0 (май 2026)  
 **Статус:** Актуально для ветки `dev`  
-**Архитектурный статус:** команды должны использовать `CommandAPI`
 
 ---
 
@@ -22,55 +21,88 @@
   * [6.1. Наследование прав](#61-наследование-прав)
   * [6.2. Права пользователя внутри команды](#62-права-пользователя-внутри-команды)
   * [6.3. Изменение других пользователей и ручные проверки](#63-изменение-других-пользователей-и-ручные-проверки)
+  * [6.4. Force Group и limited_inheritance](#64-force-group-и-limited_inheritance)
 * [7. Работа с аргументами](#7-работа-с-аргументами)
-  * [7.1. Встроенный парсер `api.parser()`](#71-встроенный-парсер-apiparser)
-  * [7.2. Ручной парсинг (альтернатива)](#72-ручной-парсинг-альтернатива)
-* [8. Работа с вводом и выводом (IO)](#8-работа-с-вводом-и-выводом-io)
-  * [8.1. Возврат значения из команды](#81-возврат-значения-из-команды)
-  * [8.2. Методы вывода `CommandAPI`](#82-методы-вывода-commandapi)
-  * [8.3. Прямой доступ к `Terminal`](#83-прямой-доступ-к-terminal)
-* [9. Интерактивный ввод](#9-интерактивный-ввод)
-* [10. Работа с окружением (`UserEnvironment`)](#10-работа-с-окружением-userenvironment)
-  * [10.1. Временные переменные сессии](#101-временные-переменные-сессии)
-  * [10.2. Постоянное сохранение в БД (`saved_env`)](#102-постоянное-сохранение-в-бд-saved_env)
-* [11. Работа с PTY и интерактивными процессами](#11-работа-с-pty-и-интерактивными-процессами)
-  * [11.1. Быстрый способ: `api.run_interactive()`](#111-быстрый-способ-apirun_interactive)
-  * [11.2. Низкоуровневая работа через `api.pty`](#112-низкоуровневая-работа-через-apipty)
-  * [11.3. Важно: `attach_streams()` блокирует выполнение](#113-важно-attach_streams-блокирует-выполнение)
-  * [11.4. Завершение PTY и cleanup](#114-завершение-pty-и-cleanup)
-  * [11.5. Полноэкранные команды и альтернативный экран](#115-полноэкранные-команды-и-альтернативный-экран)
-* [12. Работа с мышью](#12-работа-с-мышью)
-* [13. Альтернативный экран](#13-альтернативный-экран)
-* [14. Работа с базой данных](#14-работа-с-базой-данных)
-  * [14.1. Доступ к БД](#141-доступ-к-бд)
-  * [14.2. Shortcut-методы через `api`](#142-shortcut-методы-через-api)
-  * [14.3. Что возвращают `fetch_one()` и `fetch_all()`](#143-что-возвращают-fetch_one-и-fetch_all)
-  * [14.4. Практические примеры SQL](#144-практические-примеры-sql)
-  * [14.5. Транзакции и обработка ошибок](#145-транзакции-и-обработка-ошибок)
-* [15. Работа с JSON-полями в таблице `users`](#15-работа-с-json-полями-в-таблице-users)
-  * [15.1. `ssh_keys`](#151-ssh_keys)
-  * [15.2. `saved_env`](#152-saved_env)
-  * [15.3. `history`](#153-history)
-* [16. `api.user` и `UserContext`](#16-apiuser-и-usercontext)
-* [17. Криптография](#17-криптография)
-* [18. Глобальные сервисы и `GlobalStore`](#18-глобальные-сервисы-и-globalstore)
-* [19. Исключения команд](#19-исключения-команд)
-* [20. Логирование](#20-логирование)
-* [21. Размеры терминала](#21-размеры-терминала)
-* [22. Тестирование и локальная отладка](#22-тестирование-и-локальная-отладка)
-* [23. Лучшие практики](#23-лучшие-практики)
-* [24. Полные примеры команд](#24-полные-примеры-команд)
-  * [24.1. Простая команда](#241-простая-команда)
-  * [24.2. Команда с парсером](#242-команда-с-парсером)
-  * [24.3. Команда с правами и БД](#243-команда-с-правами-и-бд)
-  * [24.4. Интерактивная команда подтверждения](#244-интерактивная-команда-подтверждения)
-  * [24.5. Интерактивный shell](#245-интерактивный-shell)
+  * [7.1. Декларативный парсер: `build_parser`](#71-декларативный-парсер-build_parser)
+  * [7.2. Получение парсера в `execute`](#72-получение-парсера-в-execute)
+  * [7.3. Позиционные аргументы](#73-позиционные-аргументы)
+  * [7.4. Флаги (`store_true`)](#74-флаги-store_true)
+  * [7.5. Опции со значением](#75-опции-со-значением)
+  * [7.6. Короткие и длинные формы](#76-короткие-и-длинные-формы)
+  * [7.7. Группировка коротких флагов](#77-группировка-коротких-флагов)
+  * [7.8. Типизация (`type=int` и др.)](#78-типизация-typeint-и-др)
+  * [7.9. Обязательные аргументы](#79-обязательные-аргументы)
+  * [7.10. Ограничение значений (`choices`)](#710-ограничение-значений-choices)
+  * [7.11. Несколько значений (`nargs`)](#711-несколько-значений-nargs)
+  * [7.12. Повторяемые аргументы (`append`)](#712-повторяемые-аргументы-append)
+  * [7.13. Счётчик (`count`)](#713-счётчик-count)
+  * [7.14. Подкоманды (`add_subparsers`)](#714-подкоманды-add_subparsers)
+  * [7.15. Автоматическая справка](#715-автоматическая-справка)
+  * [7.16. Обработка ошибок парсера](#716-обработка-ошибок-парсера)
+  * [7.17. Ручной парсинг (альтернатива)](#717-ручной-парсинг-альтернатива)
+* [8. Подсистема LSP: автодополнение и подсветка](#8-подсистема-lsp-автодополнение-и-подсветка)
+  * [8.1. Как LSP использует `build_parser`](#81-как-lsp-использует-build_parser)
+  * [8.2. Lexer и токенизация](#82-lexer-и-токенизация)
+  * [8.3. Autocomplete (меню автодополнения)](#83-autocomplete-меню-автодополнения)
+  * [8.4. Inline hints](#84-inline-hints)
+  * [8.5. Syntax highlighting](#85-syntax-highlighting)
+  * [8.6. AST highlighting](#86-ast-highlighting)
+* [9. Работа с вводом и выводом (IO)](#9-работа-с-вводом-и-выводом-io)
+  * [9.1. Возврат значения из команды](#91-возврат-значения-из-команды)
+  * [9.2. Методы вывода `CommandAPI`](#92-методы-вывода-commandapi)
+  * [9.3. Прямой доступ к `Terminal`](#93-прямой-доступ-к-terminal)
+* [10. Интерактивный ввод](#10-интерактивный-ввод)
+  * [10.1. `read_line` — ввод строки](#101-read_line--ввод-строки)
+  * [10.2. `read_line_secret` — скрытый ввод](#102-read_line_secret--скрытый-ввод)
+  * [10.3. `prompt` — псевдоним `read_line`](#103-prompt--псевдоним-read_line)
+  * [10.4. `confirm` — подтверждение (выбрасывает `CommandAbort`)](#104-confirm--подтверждение-выбрасывает-commandabort)
+* [11. Работа с окружением (`UserEnvironment`)](#11-работа-с-окружением-userenvironment)
+  * [11.1. Временные переменные сессии](#111-временные-переменные-сессии)
+  * [11.2. Постоянное сохранение в БД (`saved_env`)](#112-постоянное-сохранение-в-бд-saved_env)
+* [12. Работа с историей команд (`api.history`)](#12-работа-с-историей-команд-apihistory)
+* [13. Работа с PTY и интерактивными процессами](#13-работа-с-pty-и-интерактивными-процессами)
+  * [13.1. Быстрый способ: `api.run_interactive()`](#131-быстрый-способ-apirun_interactive)
+  * [13.2. Низкоуровневая работа через `api.pty`](#132-низкоуровневая-работа-через-apipty)
+  * [13.3. Важно: `attach_streams()` блокирует выполнение](#133-важно-attach_streams-блокирует-выполнение)
+  * [13.4. Завершение PTY и cleanup](#134-завершение-pty-и-cleanup)
+  * [13.5. Полноэкранные команды и альтернативный экран](#135-полноэкранные-команды-и-альтернативный-экран)
+* [14. Работа с мышью](#14-работа-с-мышью)
+* [15. Альтернативный экран](#15-альтернативный-экран)
+* [16. Работа с базой данных](#16-работа-с-базой-данных)
+  * [16.1. Доступ к БД](#161-доступ-к-бд)
+  * [16.2. Shortcut-методы через `api`](#162-shortcut-методы-через-api)
+  * [16.3. Что возвращают `fetch_one()` и `fetch_all()`](#163-что-возвращают-fetch_one-и-fetch_all)
+  * [16.4. Практические примеры SQL](#164-практические-примеры-sql)
+  * [16.5. Транзакции и обработка ошибок](#165-транзакции-и-обработка-ошибок)
+* [17. Работа с JSON-полями в таблице `users`](#17-работа-с-json-полями-в-таблице-users)
+  * [17.1. `ssh_keys`](#171-ssh_keys)
+  * [17.2. `saved_env`](#172-saved_env)
+  * [17.3. `history`](#173-history)
+* [18. `api.user` и `UserContext`](#18-apiuser-и-usercontext)
+* [19. Криптография](#19-криптография)
+* [20. Глобальные сервисы и `GlobalStore`](#20-глобальные-сервисы-и-globalstore)
+* [21. Исключения команд](#21-исключения-команд)
+* [22. Логирование](#22-логирование)
+* [23. Размеры терминала](#23-размеры-терминала)
+* [24. Система ввода: Line Editor](#24-система-ввода-line-editor)
+  * [24.1. Input scroll (прокрутка ввода)](#241-input-scroll-прокрутка-ввода)
+  * [24.2. Управление курсором](#242-управление-курсором)
+* [25. Keybind layer (слой горячих клавиш)](#25-keybind-layer-слой-горячих-клавиш)
+* [26. Тестирование и локальная отладка](#26-тестирование-и-локальная-отладка)
+* [27. Лучшие практики](#27-лучшие-практики)
+* [28. Полные примеры команд](#28-полные-примеры-команд)
+  * [28.1. Простая команда](#281-простая-команда)
+  * [28.2. Команда с `build_parser` и подкомандами](#282-команда-с-build_parser-и-подкомандами)
+  * [28.3. Команда с правами и БД](#283-команда-с-правами-и-бд)
+  * [28.4. Интерактивная команда подтверждения](#284-интерактивная-команда-подтверждения)
+  * [28.5. Интерактивный shell через `run_interactive()`](#285-интерактивный-shell-через-run_interactive)
+  * [28.6. Интерактивный shell через низкоуровневый PTY](#286-интерактивный-shell-через-низкоуровневый-pty)
 
 ---
 
 # 1. Общая идея
 
-Начиная с текущей версии ветки `dev`, команды должны использовать **единый стабильный слой** — `CommandAPI`. Его задача: **скрыть внутреннюю архитектуру SSH-сервера** и дать команде один объект с доступом к:
+Начиная с текущей версии ветки `dev`, команды должны использовать **единый стабильный слой** — `CommandAPI` (версия 3.0). Его задача: **скрыть внутреннюю архитектуру SSH-сервера** и дать команде один объект с доступом ко всему необходимому:
 
 * текущему пользователю,
 * аргументам,
@@ -81,7 +113,9 @@
 * PTY,
 * логгеру,
 * парсеру аргументов,
-* интерактивному вводу/выводу.
+* интерактивному вводу/выводу,
+* истории команд,
+* криптографии.
 
 Это означает, что **новые команды не должны напрямую полагаться** на:
 
@@ -90,7 +124,9 @@
 * `session.extra["permissions"]`
 * `GlobalStore.get().require("db")`
 
-Вместо этого команда должна работать через `api`. Реализация `CommandAPI` уже предоставляет эти возможности централизованно.
+Вместо этого команда работает через `api`. Реализация `CommandAPI` предоставляет эти возможности централизованно.
+
+> **Ключевое изменение v3.0:** парсер теперь объявляется декларативно через `build_parser(parser)` в поле команды. Этот парсер используется как в `execute`, так и в подсистеме LSP (автодополнение, подсветка).
 
 ---
 
@@ -102,6 +138,9 @@
 # commands/internal/about.py
 from sshserver.commandapi import CommandAPI
 
+def build_parser(parser):
+    parser.description = command["help"]
+
 async def execute(api: CommandAPI) -> str | None:
     return f"Hello, {api.username}!"
 
@@ -109,6 +148,7 @@ command = {
     "name": "about",
     "help": "Show information about current session",
     "func": execute,
+    "build_parser": build_parser,
 }
 ```
 
@@ -120,6 +160,9 @@ command = {
 # commands/edit/__init__.py
 from sshserver.commandapi import CommandAPI
 
+def build_parser(parser):
+    parser.description = command["help"]
+
 async def execute(api: CommandAPI):
     return "Edit command"
 
@@ -128,7 +171,8 @@ command = {
     "name": "edit",
     "help": "Edit configuration",
     "func": execute,
-    "permissions": ["config_edit"]
+    "permissions": ["config_edit"],
+    "build_parser": build_parser,
 }
 ```
 
@@ -157,12 +201,17 @@ command = {
 ```python
 from sshserver.commandapi import CommandAPI
 
+def build_parser(parser):
+    parser.description = command["help"]
+
 async def execute(api: CommandAPI) -> str | None:
     return f"Hello, {api.username}!"
 ```
 
 Это **новый рекомендуемый стандарт**.  
-Команда получает **один объект** `api`, а не `username` и не набор разрозненных helper’ов.
+Команда получает **один объект** `api`, а не `username` и не набор разрозненных helper'ов.
+
+> **Важно:** поле `build_parser` в `command` обязательно для всех новых команд. Оно нужно для LSP (автодополнение, подсветка синтаксиса).
 
 ---
 
@@ -196,7 +245,7 @@ from sshserver.commandapi import (
 
 ## 5.1. Что содержит `api`
 
-При создании `CommandAPI(username, args)` объект инициализирует и кэширует доступ к ключевым сервисам сессии и среды выполнения.
+При создании `CommandAPI(username, args, parser=None)` объект инициализирует и кэширует доступ к ключевым сервисам сессии и среды выполнения.
 
 Доступные поля и свойства:
 
@@ -206,15 +255,15 @@ api.args            # tuple[str, ...] аргументов команды
 api.session         # текущая SSH-сессия
 api.terminal        # Terminal
 api.env             # UserEnvironment
-api.history         # History
+api.history         # History (объект истории команд)
 api.permissions     # set[str]
 api.logger          # logging.Logger
 
 api.db              # Database (lazy)
 api.pty             # PTYHandler
-api.mouse           # mouse handler
-api.rows            # высота терминала
-api.cols            # ширина терминала
+api.mouse           # MouseHandler
+api.rows            # высота терминала (строки)
+api.cols            # ширина терминала (символы)
 api.pixheight       # высота терминала (в пикселях)
 api.pixwidth        # ширина терминала (в пикселях)
 api.user            # UserContext (lazy)
@@ -225,7 +274,7 @@ api.config          # объект конфигурации (lazy)
 
 ## 5.2. Доступ к сессии и служебным данным
 
-`CommandAPI` сам использует текущую SSH-сессию и вытаскивает оттуда нужные объекты, включая `terminal`, `env` и `permissions`.
+`CommandAPI` сам использует текущую SSH-сессию и вытаскивает оттуда нужные объекты, включая `terminal`, `env`, `permissions` и `history`.
 
 Эквивалентно старому стилю:
 
@@ -234,6 +283,7 @@ session = get_current_session()
 terminal = session.extra["terminal"]
 env = session.extra["env"]
 permissions = session.extra.get("permissions", [])
+history = session.extra.get("history", None)
 ```
 
 Теперь всё это уже доступно через:
@@ -242,6 +292,7 @@ permissions = session.extra.get("permissions", [])
 api.terminal
 api.env
 api.permissions
+api.history
 ```
 
 ### Что находится в `session.extra`
@@ -251,6 +302,7 @@ api.permissions
 * `session.extra["terminal"]` → объект `Terminal`
 * `session.extra["env"]` → объект `UserEnvironment`
 * `session.extra["permissions"]` → список прав пользователя
+* `session.extra["history"]` → объект `History`
 
 Именно из этих данных `CommandAPI` собирает свой runtime-контекст.
 
@@ -260,7 +312,7 @@ api.permissions
 
 ## 6.1. Наследование прав
 
-Система наследования прав **не изменилась**:
+Система наследования прав:
 
 * права могут задаваться у категорий;
 * команда наследует права родительских уровней;
@@ -346,122 +398,119 @@ if target_username != api.username and not api.has_permission("admin"):
 
 То есть:
 
-* **доступ к самой команде** может быть защищён через `command["permissions"]`,
-* **доступ к конкретному действию** проверяется уже внутри логики команды.
+* **доступ к самой команде** может быть защищён через `command["permissions"]`
+* **доступ к конкретному действию** проверяется уже внутри логики команды
+
+---
+
+## 6.4. Force Group и limited_inheritance
+
+Добавлены расширенные опции управления правами:
+
+* **Force Group** — принудительная привязка пользователя к группе
+* **limited_inheritance** — ограниченное наследование прав (наследуются только явно указанные)
+
+Эти опции задаются на уровне категории или пользователя. Команда `chgroup` позволяет изменять группу пользователей:
+
+```bash
+chgroup 2 user1 user2
+```
+
+```python
+# Прямое API-взаимодействие
+api.require_permission("db_admin")
+
+async with api.db.transaction():
+    for user in parsed_args.users:
+        await api.execute(
+            "UPDATE users SET group_id = ? WHERE username = ?",
+            (group_id, user)
+        )
+```
+
+```python
+# Прямое взаимодействие с БД (низкоуровневый доступ)
+db = api.db
+async with db.transaction():
+    cursor = await db.execute(
+        "UPDATE users SET group_id = ? WHERE username = ?",
+        (new_group_id, target_user)
+    )
+    await db.commit()
+```
 
 ---
 
 # 7. Работа с аргументами
 
-## 7.1. Встроенный парсер `api.parser()`
+## 7.1. Декларативный парсер: `build_parser`
 
-`CommandAPI` предоставляет argparse-подобный парсер аргументов (`ArgumentParser`), который используется для разбора аргументов команды.
-
-В отличие от классического подхода, парсер:
-
-* **объявляется в `build_parser`**
-* **создаётся один раз при загрузке команды**
-* **переиспользуется в `execute` и LSP**
-
-Встроенный `ArgumentParser` поддерживает:
-* **Позиционные аргументы**
-* **Флаги** (`store_true`)
-* **Опции со значением**
-* **Короткие и длинные формы** (`-v`, `--verbose`)
-* **Группировку коротких флагов** (`-abc`)
-* **Короткие опции со значением** (`-n5`)
-* **Длинные опции со значением через `=`** (`--count=5`)
-* **Подкоманды**
-* **Автоматический `-h/--help`**
-* **Типизацию значений** (`type=int`)
-* **Проверку допустимых значений** (`choices=[...]`)
-* **Обязательные аргументы** (`required=True`)
-* **Множественные значения** через `nargs`
-
----
-
-### 7.1.1. Получение парсера
-
-Внутри `execute` используется:
-
-```python
-parser = api.parser()
-## или
-parser = api.parser("command_name")
-## или
-parser = api.parser("command_name", description="Описание")
-```
-
-После этого можно разобрать аргументы:
-
-```python
-parsed_args = parser.parse_args(api.args)
-```
-
----
-
-### 7.1.2. Определение аргументов (`build_parser`)
-
-Все аргументы объявляются в отдельной функции:
+**Новый подход в v3.0:** парсер объявляется отдельной функцией `build_parser(parser)`, которая регистрируется в `command`:
 
 ```python
 def build_parser(parser):
     parser.description = command["help"]
+    parser.add_argument("group_id", help="Group ID")
+    parser.add_argument("users", nargs="+", help="One or more usernames")
 
-    parser.add_argument("vars", nargs="+", help="Variables to unset")
+command = {
+    "name": "chgroup",
+    "help": "Change group of one or more users",
+    "func": execute,
+    "build_parser": build_parser,  # <-- декларативная регистрация
+}
 ```
 
-Пример из `unset`.
+Преимущества:
+
+* парсер создаётся **один раз при загрузке команды**
+* используется в `execute` и **LSP** (автодополнение, подсветка)
+* чистое разделение: `build_parser` описывает CLI, `execute` — логику
 
 ---
 
-### 7.1.3. Базовый синтаксис
+## 7.2. Получение парсера в `execute`
 
-Аргументы добавляются через:
+Внутри `execute` используется:
 
 ```python
-parser.add_argument(...)
+parser = api.parser("command_name", description=command["help"])
+parsed_args = parser.parse_args(api.args)
 ```
+
+Если команда зарегистрировала `build_parser`, `api.parser()` вернёт готовый сконфигурированный парсер.
 
 ---
 
-#### Позиционные аргументы
+## 7.3. Позиционные аргументы
 
 ```python
-parser.add_argument("group_id", help="Group ID")
-parser.add_argument("users", nargs="+", help="One or more usernames")
+def build_parser(parser):
+    parser.add_argument("group_id", help="Group ID")
+    parser.add_argument("users", nargs="+", help="One or more usernames")
 ```
 
-Пример: `chgroup`
-
-Использование:
-
-```bash
-chgroup 10 user1 user2
-```
+Пример: `chgroup 10 user1 user2`
 
 Доступ:
 
 ```python
-parsed_args.group_id
-parsed_args.users
+parsed_args.group_id   # "10"
+parsed_args.users      # ["user1", "user2"]
 ```
 
 ---
 
-#### Флаги (без значения)
+## 7.4. Флаги (`store_true`)
 
 ```python
-parser.add_argument("-n", action="store_true")
-parser.add_argument("-e", action="store_true")
-parser.add_argument("-E", action="store_true")
+def build_parser(parser):
+    parser.add_argument("-n", action="store_true", help="No trailing newline")
+    parser.add_argument("-e", action="store_true", help="Enable escape sequences")
+    parser.add_argument("-E", action="store_true", help="Disable escape sequences")
 ```
 
-Пример: `echo`
-
-```bash
-echo -n hello
-```
+Пример: `echo -n hello`
 
 ```python
 parsed_args.n == True
@@ -469,24 +518,26 @@ parsed_args.n == True
 
 ---
 
-#### Опции со значением
+## 7.5. Опции со значением
 
 ```python
-parser.add_argument("--user", help="Target username")
+def build_parser(parser):
+    parser.add_argument("--user", help="Target username")
 ```
 
-Пример: `sshkey`
+Пример: `sshkey list --user admin`
 
-```bash
-sshkey list --user admin
+```python
+parsed_args.user  # "admin"
 ```
 
 ---
 
-#### Короткие и длинные формы
+## 7.6. Короткие и длинные формы
 
 ```python
-parser.add_argument("-v", "--verbose", action="store_true")
+def build_parser(parser):
+    parser.add_argument("-v", "--verbose", action="store_true", help="Verbose output")
 ```
 
 Поддерживается:
@@ -498,7 +549,7 @@ cmd --verbose
 
 ---
 
-#### Группировка коротких флагов
+## 7.7. Группировка коротких флагов
 
 ```bash
 cmd -abc
@@ -512,26 +563,11 @@ cmd -a -b -c
 
 ---
 
-#### Короткие опции со значением
-
-```bash
-cmd -n5
-```
-
----
-
-#### Длинные опции через `=`
-
-```bash
-cmd --count=5
-```
-
----
-
-### 7.1.4. Типизация аргументов
+## 7.8. Типизация (`type=int` и др.)
 
 ```python
-parser.add_argument("--cpus", type=int)
+def build_parser(parser):
+    parser.add_argument("--cpus", type=int, help="Number of CPUs")
 ```
 
 Если значение некорректно:
@@ -544,20 +580,22 @@ cmd --cpus abc
 
 ---
 
-### 7.1.5. Обязательные аргументы
+## 7.9. Обязательные аргументы
 
 ```python
-parser.add_argument("--user", required=True)
+def build_parser(parser):
+    parser.add_argument("--user", required=True, help="Target username")
 ```
 
 Если аргумент не передан — будет ошибка.
 
 ---
 
-### 7.1.6. Ограничение значений (`choices`)
+## 7.10. Ограничение значений (`choices`)
 
 ```python
-parser.add_argument("--mode", choices=["fast", "safe"])
+def build_parser(parser):
+    parser.add_argument("--mode", choices=["fast", "safe"], help="Operation mode")
 ```
 
 ```bash
@@ -566,28 +604,28 @@ cmd --mode fast
 
 ---
 
-### 7.1.7. Несколько значений (`nargs`)
+## 7.11. Несколько значений (`nargs`)
 
 ```python
-parser.add_argument("text", nargs="*")
-parser.add_argument("vars", nargs="+")
-parser.add_argument("file", nargs="?")
+def build_parser(parser):
+    parser.add_argument("text", nargs="*", help="Text arguments")
+    parser.add_argument("vars", nargs="+", help="Variables to unset")
+    parser.add_argument("file", nargs="?", help="Optional file")
 ```
 
-#### Поведение:
-
-| nargs | описание         |
-| ----- | ---------------- |
-| `?`   | 0 или 1 значение |
-| `*`   | 0 или больше     |
-| `+`   | 1 или больше     |
+| nargs | описание |
+|-------|----------|
+| `?` | 0 или 1 значение |
+| `*` | 0 или больше |
+| `+` | 1 или больше |
 
 ---
 
-### 7.1.8. Повторяемые аргументы
+## 7.12. Повторяемые аргументы (`append`)
 
 ```python
-parser.add_argument("--tag", action="append")
+def build_parser(parser):
+    parser.add_argument("--tag", action="append", help="Add tag")
 ```
 
 ```bash
@@ -600,10 +638,11 @@ parsed_args.tag == ["a", "b"]
 
 ---
 
-### 7.1.9. Счётчик (`count`)
+## 7.13. Счётчик (`count`)
 
 ```python
-parser.add_argument("-v", action="count")
+def build_parser(parser):
+    parser.add_argument("-v", action="count", help="Verbosity level")
 ```
 
 ```bash
@@ -616,7 +655,7 @@ parsed_args.v == 3
 
 ---
 
-### 7.1.10. Подкоманды
+## 7.14. Подкоманды (`add_subparsers`)
 
 Используются для сложных команд.
 
@@ -633,51 +672,35 @@ def build_parser(parser):
 
     p_add = subparsers.add_parser("add", help="Add SSH key")
     p_add.add_argument("key", help="SSH public key")
+    p_add.add_argument("--user", help="Target username")
 
     p_del = subparsers.add_parser("delete", help="Delete SSH key")
     p_del.add_argument("index", help="Key index")
 ```
 
----
-
-#### Разбор
-
-```python
-parsed_args = parser.parse_args(api.args)
-```
-
-```python
-parsed_args.subcommand
-```
-
----
-
 #### Использование
 
 ```bash
 sshkey list
+sshkey list --user admin
 sshkey add AAAAB3...
 sshkey delete 0
 ```
-
----
 
 #### Обработка
 
 ```python
 if parsed_args.subcommand == "list":
     ...
-
 elif parsed_args.subcommand == "add":
     ...
-
 elif parsed_args.subcommand == "delete":
     ...
 ```
 
 ---
 
-### 7.1.11. Автоматическая справка
+## 7.15. Автоматическая справка
 
 Каждый парсер поддерживает:
 
@@ -695,7 +718,7 @@ command --help
 
 ---
 
-### 7.1.12. Обработка ошибок
+## 7.16. Обработка ошибок парсера
 
 ```python
 try:
@@ -704,128 +727,11 @@ except CommandArgumentError as e:
     return f"Argument error: {e}\n"
 ```
 
----
-
-### 7.1.13. Работа с результатами
-
-Примеры из реальных команд:
-
-#### fallback значения
-
-```python
-target_user = parsed_args.user or api.username
-```
+При запросе справки (`-h` / `--help`) также выбрасывается `CommandArgumentError` с текстом help.
 
 ---
 
-#### ручная валидация
-
-```python
-try:
-    group_id = int(parsed_args.group_id)
-except ValueError:
-    return "Group ID must be a number.\n"
-```
-
----
-
-#### списки аргументов
-
-```python
-for var in parsed_args.vars:
-    ...
-```
-
----
-
-### 7.1.14. Архитектурные особенности
-
-Текущая модель:
-
-* `build_parser` → описывает CLI
-* parser создаётся один раз
-* `execute` использует готовый parser
-* parser доступен для:
-
-  * LSP
-  * autocomplete
-  * внешних интерфейсов
-
----
-
-### 7.1.15. Практические примеры
-
-#### `unset`
-
-```bash
-unset VAR1 VAR2
-```
-
----
-
-#### `echo`
-
-```bash
-echo -n -e "hello\n"
-```
-
----
-
-#### `sshkey`
-
-```bash
-sshkey add AAAA...
-sshkey list --user admin
-sshkey delete 0
-```
-
----
-
-#### `chgroup`
-
-```bash
-chgroup 2 user1 user2
-```
-
----
-
-#### `sessioninfo`
-
-```bash
-sessioninfo -a
-sessioninfo username ip extra
-```
-
-### 7.1.16. полный пример комманды с парсером
-```python
-from sshserver.commandapi import CommandAPI
-
-def build_parser(parser):
-    parser.description=command["help"]
-    parser.add_argument("vars", nargs="+", help="Variables to unset")
-
-async def execute(api: CommandAPI) -> str:
-    parser = api.parser("unset", description=command["help"])
-    parsed_args = parser.parse_args(api.args)
-
-    env = api.env
-    vars = parsed_args.vars
-
-    for var in vars:
-        if env.get(var, None) is not None:
-            env.unset(var)
-        else:
-            await api.write(f"Variable {var} is no setted\r\n")
-
-command = {
-    "name": "unset",
-    "help": "Remove environment variable",
-    "func": execute,
-    "build_parser": build_parser
-}
-```
-
-## 7.2. Ручной парсинг (альтернатива)
+## 7.17. Ручной парсинг (альтернатива)
 
 Если команда простая или требует полного контроля, допустим и ручной парсинг:
 
@@ -869,11 +775,99 @@ async def execute(api: CommandAPI) -> str | None:
     return "OK\n"
 ```
 
+> **Примечание:** ручной парсинг не интегрируется с LSP (нет автодополнения для ручных аргументов).
+
 ---
 
-# 8. Работа с вводом и выводом (IO)
+# 8. Подсистема LSP: автодополнение и подсветка
 
-## 8.1. Возврат значения из команды
+В проект интегрирована подсистема LSP (Language Server Protocol), которая обеспечивает:
+
+* автодополнение (autocomplete menu)
+* inline hints (подсказки inline)
+* syntax highlighting (подсветку синтаксиса)
+* AST highlighting (семантическую подсветку)
+
+## 8.1. Как LSP использует `build_parser`
+
+LSP получает доступ к декларативному описанию CLI через `build_parser`:
+
+```python
+# Диспетчер передаёт парсер в CommandAPI при создании
+parser = command.get("build_parser")
+api = CommandAPI(username, args, parser=parser)
+```
+
+LSP использует этот парсер для:
+
+* построения списка доступных опций
+* автодополнения аргументов
+* валидации введённого текста
+* семантической подсветки
+
+---
+
+## 8.2. Lexer и токенизация
+
+Встроенный lexer разбивает ввод пользователя на токены:
+
+* команда
+* опции (`-f`, `--flag`)
+* значения
+* строки
+
+Токены передаются в LSP engine для анализа и подсветки.
+
+---
+
+## 8.3. Autocomplete (меню автодополнения)
+
+При вводе команды пользователь видит меню автодополнения:
+
+* список доступных команд
+* опции для текущей команды
+* подсказки по типам аргументов
+
+Меню управляется стрелками (`↑` / `↓`) и подтверждается `Tab` или `Enter`.
+
+---
+
+## 8.4. Inline hints
+
+В строке ввода отображаются подсказки:
+
+* ожидаемые аргументы
+* типы значений
+* доступные опции
+
+Hints обновляются динамически по мере ввода.
+
+---
+
+## 8.5. Syntax highlighting
+
+Строка ввода подсвечивается синтаксически:
+
+* команда — выделенный цвет
+* опции — другой цвет
+* значения — третий цвет
+* ошибки — красный/подчёркивание
+
+---
+
+## 8.6. AST highlighting
+
+Семантическая подсветка на уровне AST (Abstract Syntax Tree):
+
+* распознаёт структуру команды
+* подсвечивает согласно контексту
+* оптимизировано: токены обрабатываются не по grapheme, а по syntax token
+
+---
+
+# 9. Работа с вводом и выводом (IO)
+
+## 9.1. Возврат значения из команды
 
 Функция `execute(...)` может:
 
@@ -889,140 +883,153 @@ async def execute(api: CommandAPI) -> str | None:
 
 ---
 
-## 8.2. Методы вывода `CommandAPI`
-
-В `CommandAPI` уже есть готовые методы вывода.
+## 9.2. Методы вывода `CommandAPI`
 
 ### Базовые
 
-```python
-await api.write("Hello")           # запись строки или байтов
-await api.writeln("Hello")         # с переводом строки
-await api.write_line("Hello")      # псевдоним writeln
-await api.flush()                  # принудительный сброс буфера (если есть)
-await api.clear()                  # очистка экрана (ANSI)
-```
+| API вызов | Прямое взаимодействие |
+|-----------|----------------------|
+| `await api.write("Hello")` | `await api.terminal.output.output_str("Hello")` |
+| `await api.writeln("Hello")` | `await api.write("Hello\n")` |
+| `await api.write_line("Hello")` | псевдоним `writeln` |
+| `await api.flush()` | `await api.terminal.output.flush()` (если есть) |
+| `await api.clear()` | `await api.write(b"\x1b[2J\x1b[H")` |
 
-### Цветные helper’ы
+### Цветные helper'ы
 
-```python
-await api.write_success("Done")    # зелёный
-await api.write_error("Failed")    # красный
-await api.write_warning("Warning") # жёлтый
-```
+| API вызов | ANSI-коды |
+|-----------|-----------|
+| `await api.write_success("Done")` | `\x1b[32m` (зелёный) + сброс |
+| `await api.write_error("Failed")` | `\x1b[31m` (красный) + сброс |
+| `await api.write_warning("Warning")` | `\x1b[33m` (жёлтый) + сброс |
 
 ---
 
-## 8.3. Прямой доступ к `Terminal`
+## 9.3. Прямой доступ к `Terminal`
 
 Если нужен низкий уровень — терминал доступен напрямую:
 
 ```python
-terminal = api.terminal
-```
+# Через API	erminal = api.terminal
 
-И дальше можно работать напрямую:
+# Прямое взаимодействие
+await api.terminal.output.output_str("Привет\n")
+line = await api.terminal.input.read_str()
 
-```python
-await terminal.output.write("Привет\n")
-line = await terminal.input.read_str()
+# Через session (устаревший способ — не рекомендуется)
+session = get_current_session()
+terminal = session.extra["terminal"]
 ```
 
 Но **для новых команд** предпочтительно сначала смотреть, есть ли уже helper в `CommandAPI`.
 
 ---
 
-# 9. Интерактивный ввод
+# 10. Интерактивный ввод
 
-`CommandAPI` предоставляет готовые методы интерактивного ввода.
-
-### Ввод строки
+## 10.1. `read_line` — ввод строки
 
 ```python
+# API
 name = await api.read_line("Enter name: ")
+
+# Прямое взаимодействие
+await api.terminal.output.output_str("Enter name: ")
+name = await api.terminal.input.read_str()
 ```
-
-### Ввод строки без echo
-
-```python
-secret = await api.read_line_secure("Enter secret: ")
-```
-
-### Простая обёртка
-
-```python
-name = await api.prompt("Enter name: ")
-```
-
-### Подтверждение
-
-```python
-if not await api.confirm("Delete VM? [y/N]: "):
-    return "Cancelled.\n"
-```
-
-`confirm()` считает подтверждением только:
-
-* `y`
-* `yes`
-
-в нижнем регистре после `strip()`. Если пользователь ввёл что-то другое — возвращает `False` (и **не** бросает исключение, как указано в некоторых ранних версиях документации).  
-Исключение `CommandAbort` не выбрасывается; оно может быть поднято вручную, если нужно.
 
 ---
 
-# 10. Работа с окружением (`UserEnvironment`)
+## 10.2. `read_line_secret` — скрытый ввод
 
-## 10.1. Временные переменные сессии
+```python
+# API
+secret = await api.read_line_secret("Enter token: ")
+
+# Прямое взаимодействие
+echo_was = api.terminal.input.editor.echo
+api.terminal.input.editor.echo = False
+try:
+    secret = await api.terminal.input.read_str()
+finally:
+    api.terminal.input.editor.echo = echo_was
+await api.terminal.output.output_str("\n")
+```
+
+---
+
+## 10.3. `prompt` — псевдоним `read_line`
+
+```python
+# API
+name = await api.prompt("Enter name: ")
+
+# Эквивалентно
+name = await api.read_line("Enter name: ")
+```
+
+---
+
+## 10.4. `confirm` — подтверждение (выбрасывает `CommandAbort`)
+
+```python
+# API — выбрасывает CommandAbort при отказе
+try:
+    await api.confirm("Delete VM? [y/N]: ")
+except CommandAbort:
+    return "Cancelled.\n"
+
+# Или с явной проверкой
+try:
+    if await api.confirm("Delete VM? [y/N]: "):
+        await api.write_success("Deleted.")
+except CommandAbort:
+    return "Cancelled.\n"
+```
+
+> **Важное изменение:** `confirm()` теперь выбрасывает `CommandAbort` при отрицательном ответе, а не возвращает `False`. Это позволяет использовать `await api.confirm()` без явной проверки — отказ автоматически прервёт выполнение.
+
+---
+
+# 11. Работа с окружением (`UserEnvironment`)
+
+## 11.1. Временные переменные сессии
 
 Текущее окружение доступно через:
 
 ```python
+# API
 env = api.env
-```
 
-Тип — `UserEnvironment`, который берётся из текущей сессии.
+# Прямое взаимодействие
+env = api.session.extra["env"]
+```
 
 Обычные сценарии:
 
-```python
-env.set("PS1", "pve> ")
-env.set("EDITOR", "nano")
-value = env.get("USER")
-env.unset("TEMP_VAR")
-
-text = env.substitute("Hello $USER")
-```
-
-Для удобства есть методы-шорткаты прямо в `api`:
-
-```python
-api.env_set("EDITOR", "nano")
-api.env_get("EDITOR")
-api.env_unset("TEMP_VAR")
-api.env_substitute("Hello $USER")
-```
+| Операция | API | Прямое взаимодействие |
+|----------|-----|----------------------|
+| Установить | `api.env_set("PS1", "pve> ")` | `api.env.set("PS1", "pve> ")` |
+| Получить | `api.env_get("USER")` | `api.env.get("USER")` |
+| Удалить | `api.env_unset("TEMP_VAR")` | `api.env.unset("TEMP_VAR")` |
+| Подстановка | `api.env_substitute("Hello $USER")` | `api.env.substitute("Hello $USER")` |
 
 ---
 
-## 10.2. Постоянное сохранение в БД (`saved_env`)
+## 11.2. Постоянное сохранение в БД (`saved_env`)
 
 Важно понимать:
 
 > Изменения через `api.env` живут **только в текущей сессии**, если ты отдельно не сохранишь их в БД.
 
-Если ты хочешь сделать изменение **постоянным**, нужно обновлять поле `saved_env` в таблице `users`.
-
-Пример:
-
 ```python
+# API
 import json
 
 row = await api.fetch_one(
     "SELECT saved_env FROM users WHERE username = ?",
     (api.username,)
 )
-
 if not row:
     return "User not found.\n"
 
@@ -1036,25 +1043,72 @@ await api.execute(
 )
 await api.db.commit()
 
-api.env.set("EDITOR", "nano")
+api.env_set("EDITOR", "nano")
 return "EDITOR saved.\n"
+
+# Прямое взаимодействие с БД
+import json
+db = api.db
+row = await db.fetch_one("SELECT saved_env FROM users WHERE username = ?", (api.username,))
+saved_env = json.loads(row[0] if row else "{}")
+saved_env["EDITOR"] = "nano"
+await db.execute("UPDATE users SET saved_env = ? WHERE username = ?",
+                 (json.dumps(saved_env), api.username))
+await db.commit()
 ```
 
 ---
 
-# 11. Работа с PTY и интерактивными процессами
+# 12. Работа с историей команд (`api.history`)
 
-## 11.1. Быстрый способ: `api.run_interactive()`
-
-Для большинства интерактивных программ рекомендуется использовать:
+История команд доступна через свойство `api.history`:
 
 ```python
-await api.run_interactive("/bin/bash")
+# API — доступ к истории
+history = api.history
+
+# Все записи
+for i, entry in enumerate(history.all()):
+    await api.write(f"  {i+1:2}  {entry}\r\n")
+
+# Сохранить в БД
+await history.save()
+
+# Очистить
+await history.clear(store="all")    # all, runtime, db
 ```
 
-или:
+Поле `history` в таблице `users` хранит JSON-массив строк:
 
 ```python
+# Чтение истории
+row = await api.fetch_one(
+    "SELECT history FROM users WHERE username = ?",
+    (api.username,)
+)
+(history_raw,) = row
+history = json.loads(history_raw or "[]")
+
+# Обновление истории
+history.append("userinfo --all")
+await api.execute(
+    "UPDATE users SET history = ? WHERE username = ?",
+    (json.dumps(history, ensure_ascii=False), api.username)
+)
+await api.db.commit()
+```
+
+---
+
+# 13. Работа с PTY и интерактивными процессами
+
+## 13.1. Быстрый способ: `api.run_interactive()`
+
+```python
+# API — полностью автоматизированный запуск
+await api.run_interactive("/bin/bash")
+
+# С параметрами
 await api.run_interactive(
     cmd="/bin/bash",
     args=["-i"],
@@ -1064,28 +1118,29 @@ await api.run_interactive(
 )
 ```
 
-`run_interactive()` делает сразу несколько вещей автоматически:
+`run_interactive()` делает автоматически:
 
-* гарантирует наличие PTY,
-* синхронизирует размер окна (`rows`, `cols`),
-* переключает пользователя в альтернативный экран (если `alt_screen=True`),
-* запускает процесс,
-* подключает SSH ↔ PTY,
-* после завершения возвращает экран обратно.
+* гарантирует наличие PTY (`pty.ensure()`)
+* синхронизирует размер окна (`rows`, `cols`)
+* собирает окружение процесса (`os.environ + api.env`)
+* устанавливает `TERM`
+* переключает в альтернативный экран (если `alt_screen=True`)
+* запускает процесс
+* подключает SSH ↔ PTY
+* после завершения возвращает экран и очищает ресурсы в `finally`
 
 ---
 
-## 11.2. Низкоуровневая работа через `api.pty`
-
-Если нужен полный контроль, PTY доступен напрямую:
+## 13.2. Низкоуровневая работа через `api.pty`
 
 ```python
+# API — низкоуровневый доступ
 pty = api.pty
-```
 
-Дальше можно использовать методы `PTYHandler`, например:
+# Прямое взаимодействие через terminal
+pty = api.terminal.pty
 
-```python
+# Дальше — полный контроль
 await pty.ensure()
 await pty.resize(api.rows, api.cols)
 
@@ -1093,7 +1148,8 @@ proc = await pty.spawn(
     "/bin/bash",
     ["-i"],
     env=api.env.as_dict(),
-    cwd="/root"
+    cwd="/root",
+    attach_streams=False,
 )
 
 await pty.attach_streams()
@@ -1102,65 +1158,82 @@ await proc.wait()
 
 ---
 
-## 11.3. Важно: `attach_streams()` блокирует выполнение
+## 13.3. Важно: `attach_streams()` блокирует выполнение
 
-Это один из самых важных моментов в архитектуре интерактивных команд:
-
-> После вызова `attach_streams()` выполнение команды **останавливается**, пока интерактивный процесс не завершится.
-
-То есть вот такой код:
+После вызова `attach_streams()` выполнение команды **останавливается**, пока интерактивный процесс не завершится:
 
 ```python
-await api.pty.attach_streams()
-return "Done\n"
+await api.pty.attach_streams()   # <-- блокируется здесь
+return "Done\n"                   # <-- выполнится только после выхода
 ```
 
-означает:
+---
 
-* пользователь получает управление PTY;
-* только **после выхода из процесса** выполнение дойдёт до `return`.
+## 13.4. Завершение PTY и cleanup
 
-Это критично для понимания потока управления.
+```python
+# API — run_interactive делает cleanup сам
+await api.run_interactive("/bin/bash")  # cleanup в finally
+
+# Ручной cleanup
+try:
+    await pty.attach_streams()
+    await proc.wait()
+finally:
+    try:
+        await pty.detach_streams()
+    except Exception:
+        pass
+    await api.exit_alt_screen()
+```
 
 ---
 
-## 11.4. Завершение PTY и cleanup
+## 13.5. Полноэкранные команды и альтернативный экран
 
-Если ты используешь `api.run_interactive()`, cleanup уже частично сделан внутри метода: альтернативный экран будет восстановлен в `finally`.
+```python
+# API
+await api.enter_alt_screen()
+try:
+    await api.clear()
+    await api.writeln("Interactive mode")
+    await api.read_line("Press Enter to exit...")
+finally:
+    await api.exit_alt_screen()
 
-Если ты работаешь с `api.pty` вручную, рекомендуется:
-
-* оборачивать интерактивный режим в `try/finally`;
-* при необходимости вручную возвращать экран и отключать режимы ввода;
-* следить, чтобы после аварийного завершения пользователь не остался в “сломленном” терминале.
+# Прямое взаимодействие (ANSI-коды)
+await api.write(b"\x1b[?1049h")   # enter alt screen
+await api.write(b"\x1b[2J\x1b[H") # clear
+try:
+    ...
+finally:
+    await api.write(b"\x1b[?1049l") # exit alt screen
+```
 
 ---
 
-## 11.5. Полноэкранные команды и альтернативный экран
-
-`CommandAPI` уже даёт готовые helper’ы для альтернативного экрана (см. раздел 13).
-
----
-
-# 12. Работа с мышью
+# 14. Работа с мышью
 
 Доступ к мыши есть через:
 
 ```python
+# API
 mouse = api.mouse
+
+# Прямое взаимодействие
+mouse = api.terminal.input.mouse
 ```
 
-Это shortcut к `api.terminal.input.mouse`.
+| Операция | API | Прямое взаимодействие |
+|----------|-----|----------------------|
+| Включить | `await api.mouse_enable([1002, 1006])` | `await mouse.enable([1002, 1006])` |
+| Выключить | `await api.mouse_disable()` | `await mouse.disable()` |
 
-`CommandAPI` предоставляет удобные методы для включения/отключения мыши:
+Режимы мыши:
 
-```python
-await api.mouse_enable(modes=1006)          # включить SGR режим
-await api.mouse_enable([1000, 1006])        # несколько режимов
-await api.mouse_disable()                   # выключить все
-```
-
-Пример использования:
+* `1000` — базовые клики
+* `1002` — drag/motion
+* `1006` — SGR-формат (рекомендуется всегда)
 
 ```python
 async def execute(api: CommandAPI) -> str | None:
@@ -1170,26 +1243,21 @@ async def execute(api: CommandAPI) -> str | None:
         await api.read_line()
     finally:
         await api.mouse_disable()
-
     return "Done.\n"
 ```
 
-### Рекомендация
-
-Если включаешь мышь — **всегда отключай её в `finally`**.
+> **Рекомендация:** если включаешь мышь — **всегда отключай её в `finally`**.
 
 ---
 
-# 13. Альтернативный экран
+# 15. Альтернативный экран
 
-`CommandAPI` предоставляет методы для переключения между основным и альтернативным буфером терминала (xterm 1049):
+| Операция | API | ANSI-код |
+|----------|-----|----------|
+| Включить | `await api.enter_alt_screen()` | `\x1b[?1049h` |
+| Выключить | `await api.exit_alt_screen()` | `\x1b[?1049l` |
 
-```python
-await api.enter_alt_screen()
-await api.exit_alt_screen()
-```
-
-Пример:
+Пример TUI-команды:
 
 ```python
 async def execute(api: CommandAPI) -> str | None:
@@ -1202,97 +1270,96 @@ async def execute(api: CommandAPI) -> str | None:
         await api.exit_alt_screen()
 ```
 
-Это правильный шаблон для полноэкранных команд и TUI-режима.
-
 ---
 
-# 14. Работа с базой данных
+# 16. Работа с базой данных
 
-## 14.1. Доступ к БД
-
-База данных доступна через:
+## 16.1. Доступ к БД
 
 ```python
+# API (lazy property)
 db = api.db
-```
 
-Это lazy property: объект БД поднимается через `GlobalStore.get().require("db")` только при первом обращении.
+# Прямое взаимодействие (устаревший способ)
+from helpers.globals import GlobalStore
+db = GlobalStore.get().require("db")
+```
 
 ---
 
-## 14.2. Shortcut-методы через `api`
+## 16.2. Shortcut-методы через `api`
 
-Для удобства `CommandAPI` предоставляет shortcut’ы:
-
-```python
-await api.fetch_one(query, params)      # одна строка (tuple) или None
-await api.fetch_all(query, params)      # список строк (list of tuple)
-await api.fetch_val(query, params)      # скалярное значение (первое поле первой строки)
-await api.execute(query, params)        # для INSERT/UPDATE/DELETE
-```
-
-Они просто проксируют вызовы к `api.db`.
+| API | Прямое взаимодействие | Описание |
+|-----|----------------------|----------|
+| `await api.fetch_one(q, p)` | `await api.db.fetch_one(q, p)` | Одна строка (tuple) или None |
+| `await api.fetch_all(q, p)` | `await api.db.fetch_all(q, p)` | Список строк |
+| `await api.fetch_val(q, p)` | `await api.db.fetch_val(q, p)` | Первое поле первой строки |
+| `await api.execute(q, p)` | `await api.db.execute(q, p)` | INSERT/UPDATE/DELETE |
 
 ---
 
-## 14.3. Что возвращают `fetch_one()` и `fetch_all()`
+## 16.3. Что возвращают `fetch_one()` и `fetch_all()`
 
-⚠️ **Важно:** в текущей реализации строки из БД **являются кортежами (tuple)**.
-
-Поэтому **не полагайся** на такой код:
+⚠️ **Важно:** строки из БД — это **кортежи (tuple)**, не dict.
 
 ```python
+# Правильно — распаковка
+row = await api.fetch_one("SELECT a, b FROM t WHERE id = ?", (1,))
+if not row:
+    return "Not found.\n"
+a, b = row
+
+# Неправильно — dict-интерфейс не работает
 row["username"]   # ошибка!
 row.items()       # ошибка!
 ```
 
-### Рекомендуемый безопасный способ
-
-Использовать распаковку:
-
-```python
-row = await api.fetch_one(
-    "SELECT username, group_id, created_at FROM users WHERE username = ?",
-    (api.username,)
-)
-
-if not row:
-    return "User not found.\n"
-
-db_username, group_id, created_at = row
-```
-
 ---
 
-## 14.4. Практические примеры SQL
+## 16.4. Практические примеры SQL
 
 ### SELECT одной строки
 
 ```python
+# API
 row = await api.fetch_one(
     "SELECT group_id, created_at FROM users WHERE username = ?",
     (api.username,)
 )
+
+# Прямое взаимодействие
+cursor = await api.db.execute(
+    "SELECT group_id, created_at FROM users WHERE username = ?",
+    (api.username,)
+)
+row = await cursor.fetchone()
 ```
 
 ### SELECT нескольких строк
 
 ```python
-rows = await api.fetch_all(
-    "SELECT username, group_id FROM users ORDER BY username"
-)
-
-lines = []
+# API
+rows = await api.fetch_all("SELECT username, group_id FROM users ORDER BY username")
 for username, group_id in rows:
-    lines.append(f"{username}: group={group_id}")
+    await api.writeln(f"{username}: group={group_id}")
 
-return "\n".join(lines) + "\n"
+# Прямое взаимодействие
+cursor = await api.db.execute("SELECT username, group_id FROM users ORDER BY username")
+rows = await cursor.fetchall()
 ```
 
 ### UPDATE / INSERT
 
 ```python
+# API
 await api.execute(
+    "UPDATE users SET group_id = ? WHERE username = ?",
+    (2, "alice")
+)
+await api.db.commit()
+
+# Прямое взаимодействие
+cursor = await api.db.execute(
     "UPDATE users SET group_id = ? WHERE username = ?",
     (2, "alice")
 )
@@ -1301,44 +1368,40 @@ await api.db.commit()
 
 ---
 
-## 14.5. Транзакции и обработка ошибок
-
-Если меняется несколько связанных сущностей — рекомендуется использовать транзакции:
+## 16.5. Транзакции и обработка ошибок
 
 ```python
-import logging
+# API — через async context manager
+try:
+    async with api.db.transaction():
+        await api.execute("UPDATE users SET group_id = ? WHERE username = ?", (2, "alice"))
+        await api.execute("UPDATE users SET group_id = ? WHERE username = ?", (2, "bob"))
+    return "Updated.\n"
+except Exception as e:
+    api.logger.exception("Failed to update groups")
+    return f"Database error: {e}\n"
 
-logger = logging.getLogger(__name__)
-
-async def execute(api: CommandAPI) -> str | None:
-    try:
-        async with api.db.transaction():
-            await api.execute(
-                "UPDATE users SET group_id = ? WHERE username = ?",
-                (2, "alice")
-            )
-            await api.execute(
-                "UPDATE users SET group_id = ? WHERE username = ?",
-                (2, "bob")
-            )
-
-        return "Updated.\n"
-
-    except Exception as e:
-        logger.exception("Failed to update groups")
-        return f"Database error: {e}\n"
+# Прямое взаимодействие
+try:
+    async with api.db.transaction():
+        cursor = await api.db.execute("UPDATE users ...")
+        cursor = await api.db.execute("UPDATE users ...")
+    await api.db.commit()
+except Exception as e:
+    api.logger.exception("Failed")
+    return f"Error: {e}\n"
 ```
 
 ### Практические правила
 
-* одна запись → можно `execute()` + `commit()`
+* одна запись → `execute()` + `commit()`
 * несколько связанных записей → `async with db.transaction():`
-* любые ошибки → логировать
+* любые ошибки → логировать через `api.logger`
 * не делать предположений о типе row без проверки
 
 ---
 
-# 15. Работа с JSON-полями в таблице `users`
+# 17. Работа с JSON-полями в таблице `users`
 
 Актуальная структура:
 
@@ -1355,60 +1418,39 @@ CREATE TABLE users (
 )
 ```
 
-Здесь несколько полей хранятся как JSON в `TEXT`.
+Несколько полей хранятся как JSON в `TEXT`.
 
 ---
 
-## 15.1. `ssh_keys`
-
-Поле `ssh_keys` хранит JSON-массив.
-
-### Чтение
+## 17.1. `ssh_keys`
 
 ```python
-import json
-
-row = await api.fetch_one(
-    "SELECT ssh_keys FROM users WHERE username = ?",
-    (api.username,)
-)
-
-if not row:
-    return "User not found.\n"
-
+# API
+row = await api.fetch_one("SELECT ssh_keys FROM users WHERE username = ?", (api.username,))
 (ssh_keys_raw,) = row
 ssh_keys = json.loads(ssh_keys_raw or "[]")
-```
 
-### Обновление
-
-```python
+# Добавление ключа
 ssh_keys.append("ssh-ed25519 AAAA... newkey")
-
 await api.execute(
     "UPDATE users SET ssh_keys = ? WHERE username = ?",
     (json.dumps(ssh_keys, ensure_ascii=False), api.username)
 )
 await api.db.commit()
+
+# Прямое взаимодействие
+cursor = await api.db.execute("SELECT ssh_keys FROM users WHERE username = ?", (api.username,))
+row = await cursor.fetchone()
+ssh_keys = json.loads(row[0] or "[]")
 ```
 
 ---
 
-## 15.2. `saved_env`
-
-Поле `saved_env` хранит JSON-объект.
+## 17.2. `saved_env`
 
 ```python
-import json
-
-row = await api.fetch_one(
-    "SELECT saved_env FROM users WHERE username = ?",
-    (api.username,)
-)
-
-if not row:
-    return "User not found.\n"
-
+# API
+row = await api.fetch_one("SELECT saved_env FROM users WHERE username = ?", (api.username,))
 (saved_env_raw,) = row
 saved_env = json.loads(saved_env_raw or "{}")
 saved_env["EDITOR"] = "nano"
@@ -1418,36 +1460,28 @@ await api.execute(
     (json.dumps(saved_env, ensure_ascii=False), api.username)
 )
 await api.db.commit()
+
+# Одновременно обновить сессионное окружение
+api.env_set("EDITOR", "nano")
 ```
 
 ---
 
-## 15.3. `history`
-
-Поле `history` хранит JSON-массив.
-
-### Пример чтения истории
+## 17.3. `history`
 
 ```python
-import json
+# API — через api.history
+history = api.history
+for i, entry in enumerate(history.all()):
+    await api.write(f"  {i+1:2}  {entry}\r\n")
 
-row = await api.fetch_one(
-    "SELECT history FROM users WHERE username = ?",
-    (api.username,)
-)
-
-if not row:
-    return "User not found.\n"
-
+# Ручная работа с JSON-полем
+row = await api.fetch_one("SELECT history FROM users WHERE username = ?", (api.username,))
 (history_raw,) = row
 history = json.loads(history_raw or "[]")
-```
 
-### Пример обновления истории
-
-```python
+# Добавление записи
 history.append("userinfo --all")
-
 await api.execute(
     "UPDATE users SET history = ? WHERE username = ?",
     (json.dumps(history, ensure_ascii=False), api.username)
@@ -1455,56 +1489,52 @@ await api.execute(
 await api.db.commit()
 ```
 
-### Что это поле означает
-
-`history` предназначено для хранения истории команд/действий пользователя.  
-Если команда хочет явно логировать своё действие в пользовательскую историю — она может обновлять это поле вручную.
-
 ---
 
-# 16. `api.user` и `UserContext`
-
-`CommandAPI` содержит свойство:
+# 18. `api.user` и `UserContext`
 
 ```python
+# API — ленивое создание
 user = api.user
+
+# Доступные методы (UserContext)
+user.get_field(field, default)      # получить сырое значение поля
+user.set_field(field, value)        # установить значение поля
+user.get_json(field, default)       # получить JSON-данные
+user.set_json(field, data)          # сохранить JSON
+
+# Шорткаты
+user.get_ssh_keys()
+user.set_ssh_keys(keys)
+user.get_history()
+user.set_history(history)
 ```
 
-Оно лениво создаёт `UserContext(self.username, self.db)` и кэширует его внутри `CommandAPI`.
-
-**На текущий момент** `UserContext` находится в разработке. В нём определены базовые методы:
-
-* `get_field(field, default)` — получить сырое значение поля
-* `set_field(field, value)` — установить значение поля
-* `get_json(field, default)` — получить JSON-данные
-* `set_json(field, data)` — сохранить JSON
-* Шорткаты: `get_ssh_keys()`, `set_ssh_keys(keys)`, `get_history()`, `set_history(history)`
-
-Однако эти методы **пока не реализованы** (в коде стоят `pass`). Поэтому в текущей версии рекомендуется использовать прямые SQL-запросы через `api.fetch_one` / `api.execute`. Как только `UserContext` будет доработан, его использование станет предпочтительным.
+> **Примечание:** `UserContext` находится в разработке. Некоторые методы ещё не полностью реализованы. В текущей версии рекомендуется использовать прямые SQL-запросы через `api.fetch_one` / `api.execute`.
 
 ---
 
-# 17. Криптография
-
-`CommandAPI` предоставляет методы для шифрования/расшифровки с использованием мастер-ключа из конфига (AES-GCM):
+# 19. Криптография
 
 ```python
-encrypted = api.encrypt("secret")      # шифрование
-decrypted = api.decrypt(encrypted)     # расшифровка
-```
+# API
+encrypted = api.encrypt("secret")       # шифрование AES-GCM
+decrypted = api.decrypt(encrypted)      # расшифровка
 
-Для явного контекста работы с БД доступны алиасы:
-
-```python
+# Алиасы для явного контекста БД
 api.db_encrypt(value)
 api.db_decrypt(value)
-```
 
-Они работают так же, как `encrypt`/`decrypt`.
+# Прямое взаимодействие
+from helpers.crypto import encrypt, decrypt
+encrypted = encrypt("secret")
+decrypted = decrypt(encrypted)
+```
 
 ### Пример использования в БД
 
 ```python
+# API
 encrypted_secret = api.encrypt(api_secret)
 await api.execute(
     "UPDATE users SET api_secret = ? WHERE username = ?",
@@ -1512,7 +1542,7 @@ await api.execute(
 )
 await api.db.commit()
 
-# При чтении:
+# При чтении
 row = await api.fetch_one("SELECT api_secret FROM users WHERE username = ?", (api.username,))
 if row:
     secret = api.decrypt(row[0])
@@ -1520,15 +1550,9 @@ if row:
 
 ---
 
-# 18. Глобальные сервисы и `GlobalStore`
+# 20. Глобальные сервисы и `GlobalStore`
 
-Сейчас `CommandAPI` уже использует `GlobalStore` внутри себя для доступа к БД и конфигурации.
-
-Это важно по архитектуре:
-
-> **Команды не должны напрямую использовать `GlobalStore`, если нужный сервис уже доступен через `api`.**
-
-Сейчас через `api` уже доступны:
+`CommandAPI` использует `GlobalStore` внутри себя. Через `api` уже доступны:
 
 * `api.db`
 * `api.user`
@@ -1536,135 +1560,161 @@ if row:
 * `api.env`
 * `api.permissions`
 * `api.config`
+* `api.history`
 
-Если в будущем в `GlobalStore` появятся другие сервисы (PVE client, cache, auth manager), их также желательно пробрасывать в `CommandAPI`.
-
-В случае крайней необходимости можно получить `GlobalStore` через `api.global_store()`:
+В случае крайней необходимости:
 
 ```python
+# API
 store = api.global_store()
+pve = store.require("pve_client")
+
+# Прямое взаимодействие (устаревший способ)
+from helpers.globals import GlobalStore
+store = GlobalStore.get()
 pve = store.require("pve_client")
 ```
 
+> **Команды не должны напрямую использовать `GlobalStore`, если нужный сервис уже доступен через `api`.**
+
 ---
 
-# 19. Исключения команд
+# 21. Исключения команд
 
-В `sshserver.commandapi.exceptions` определён базовый набор исключений:
-
-* `CommandError` — базовый класс для всех ошибок команд.
-* `CommandPermissionError` — недостаточно прав.
-* `CommandArgumentError` — ошибка разбора аргументов.
-* `CommandAbort` — операция отменена пользователем (например, Ctrl+C).
-* `CommandNotFoundError` — команда не найдена (внутреннее использование).
-* `CommandRuntimeError` — ошибка во время выполнения (PTY, DB, сеть и т.д.).
-
-### Когда использовать
-
-#### `CommandPermissionError`
-
-Когда пользователь не имеет права выполнить действие:
+| Исключение | Когда использовать |
+|------------|-------------------|
+| `CommandError` | Базовый класс для всех ошибок команд |
+| `CommandPermissionError` | Недостаточно прав (`api.require_permission`) |
+| `CommandArgumentError` | Ошибка разбора аргументов (парсер) |
+| `CommandAbort` | Операция отменена пользователем (`confirm` отказ) |
+| `CommandNotFoundError` | Команда не найдена (внутреннее) |
+| `CommandRuntimeError` | Ошибка выполнения (PTY, DB, сеть) |
 
 ```python
-api.require_permission("db_viewer")
-```
+from sshserver.commandapi import (
+    CommandAPI,
+    CommandError,
+    CommandPermissionError,
+    CommandArgumentError,
+    CommandAbort,
+)
 
-или вручную:
+# Проверка прав
+api.require_permission("db_admin")  # CommandPermissionError если нет
 
-```python
-from sshserver.commandapi import CommandPermissionError
-
-raise CommandPermissionError("Недостаточно прав")
-```
-
-#### `CommandArgumentError`
-
-Когда аргументы команды неверны:
-
-```python
-from sshserver.commandapi import CommandArgumentError
-
+# Ошибка аргументов
 raise CommandArgumentError("Unknown argument: --foo")
-```
 
-#### `CommandAbort`
-
-Когда пользователь явно отменил действие:
-
-```python
-from sshserver.commandapi import CommandAbort
-
+# Отмена пользователем
 if not await api.confirm("Continue? [y/N]: "):
     raise CommandAbort("Cancelled by user")
 ```
 
-### Практический стиль
-
-* для “обычных пользовательских ошибок” можно просто `return "..."`;
-* для систематических сценариев и parser/permission-ошибок лучше использовать typed exceptions.
-
 ---
 
-# 20. Логирование
-
-У `CommandAPI` уже есть логгер:
+# 22. Логирование
 
 ```python
-api.logger
-```
-
-Он создаётся как:
-
-```python
-logging.getLogger(f"cmd.{username}")
-```
-
-и уже готов к использованию.
-
-### Примеры
-
-```python
+# API — готовый логгер
 api.logger.info("User opened shell")
 api.logger.warning("Unknown option passed")
 api.logger.exception("Database update failed")
+
+# Прямое создание
+import logging
+logger = logging.getLogger(f"cmd.{api.username}")
 ```
 
 ### Что логировать
 
-Рекомендуется логировать:
-
-* изменение прав/групп;
-* обновление SSH-ключей;
-* интерактивные shell/PTY-сессии;
-* ошибки SQL;
-* любые административные действия.
+* изменение прав/групп
+* обновление SSH-ключей
+* интерактивные shell/PTY-сессии
+* ошибки SQL
+* административные действия
 
 ---
 
-# 21. Размеры терминала
+# 23. Размеры терминала
 
-Размеры терминала (строки и столбцы) доступны через свойства:
+| Свойство | Описание |
+|----------|----------|
+| `api.rows` | Высота в строках |
+| `api.cols` | Ширина в символах |
+| `api.pixheight` | Высота в пикселях |
+| `api.pixwidth` | Ширина в пикселях |
 
 ```python
-api.rows    # высота
-api.cols    # ширина
+# API
+await api.pty.resize(api.rows, api.cols, api.pixwidth, api.pixheight)
+
+# Прямое взаимодействие
+term_size = api.session.term_size  # (cols, rows, pixwidth, pixheight)
+await api.pty.resize(api.session.term_height, api.session.term_width,
+                     api.session.term_pixwidth, api.session.term_pixheight)
 ```
 
-Они обновляются автоматически при изменении размера окна SSH-клиента.
+Размеры обновляются автоматически при изменении окна SSH-клиента.
 
 ---
 
-# 22. Тестирование и локальная отладка
+# 24. Система ввода: Line Editor
 
-Пока команды переписываются под новую API, полезно придерживаться такого цикла:
+## 24.1. Input scroll (прокрутка ввода)
+
+Реализована прокрутка ввода при длинных многострочных строках:
+
+* `_scroll_offset` — смещение viewport (0 = layout row 0 прижат к верху)
+* Автоматическая прокрутка при перемещении курсора за пределы экрана
+* Корректная отрисовка при scroll > 0
+* Поддержка многострочного ввода с переносом
+
+---
+
+## 24.2. Управление курсором
+
+Система отслеживает позицию курсора:
+
+* `_cursor_abs` — абсолютная позиция (row, col), 1-based
+* `_anchor_row` — строка терминала где начинается layout row=0
+* `_layout_anchor_row` — отслеживание позиции layout row=0
+
+Режимы рендеринга:
+
+* **absolute diff mode** — когда `_cursor_abs` заполнен
+* **relative mode** — когда позиция неизвестна (как readline)
+
+Оптимизации:
+
+* diff-рендеринг (перерисовка только изменённых участков)
+* anchor_row не выводится из cursor_pos (исправлен баг)
+* Корректная обработка многострочного wrap
+
+---
+
+# 25. Keybind layer (слой горячих клавиш)
+
+Инициализирован слой обработки горячих клавиш:
+
+* Базовая инфраструктура для keybind-обработчиков
+* Подготовка к расширяемым сочетаниям клавиш
+* Интеграция с line editor
+
+> **Статус:** базовый слой инициализирован, конкретные биндинги в разработке.
+
+---
+
+# 26. Тестирование и локальная отладка
 
 ### 1. Запусти сервер
 
-Запусти SSH server в dev-режиме или обычным способом, которым ты уже тестируешь команды.
+```bash
+python main.py
+# или с uvloop
+python main.py  # uvloop подключается автоматически
+```
 
 ### 2. Подключись по SSH
-
-Подключись локально или с тестового клиента:
 
 ```bash
 ssh user@host -p <port>
@@ -1674,75 +1724,87 @@ ssh user@host -p <port>
 
 Проверь:
 
-* корректный вывод;
-* help;
-* ошибки;
-* права;
-* интерактивный ввод.
+* корректный вывод
+* help (`-h` / `--help`)
+* ошибки парсера
+* права
+* интерактивный ввод
+* автодополнение (Tab)
+* подсветку синтаксиса
 
 ### 4. Смотри логи сервера
 
-Особенно полезно смотреть:
+Особенно полезно:
 
-* stack trace ошибок;
-* SQL-ошибки;
-* ошибки PTY;
-* ошибки парсинга.
+* stack trace ошибок
+* SQL-ошибки
+* ошибки PTY
+* ошибки парсинга
+* LSP-логи
 
 ### 5. Отладка команд
 
-Для отладки удобно:
+```python
+# Временное логирование
+api.logger.debug(f"Args: {api.args}")
+api.logger.debug(f"Parsed: {parsed_args}")
 
-* временно писать в `api.logger`
-* делать маленькие тестовые команды
-* сначала писать неинтерактивную логику, потом добавлять PTY/мышь/экран
+# Тестовые команды
+async def execute(api: CommandAPI) -> str | None:
+    api.logger.info(f"User: {api.username}, Perms: {api.permissions}")
+    return f"Debug: {api.args}\n"
+```
 
 ---
 
-# 23. Лучшие практики
+# 27. Лучшие практики
 
-1. **Новые команды пишите через `CommandAPI`.**
-   Не используйте старый стиль, если нет крайней необходимости.
+1. **Новые команды пишите через `CommandAPI` с `build_parser`.**
+   Не используйте старый стиль. `build_parser` нужен для LSP.
 
 2. **Не тяните `get_current_session()` и `GlobalStore` напрямую.**
    Всё основное уже есть в `api`.
 
-3. **Не используйте обычный `argparse` как основной parser.**
-   Он плохо подходит для SSH-команд.
+3. **Не используйте обычный `argparse`.**
+   Встроенный `ArgumentParser` интегрирован с LSP.
 
 4. **Не полагайтесь на `dict`-строки из БД.**
-   Считайте, что SQL-строка — это `tuple`, пока не доказано обратное.
+   Считайте, что SQL-строка — это `tuple`.
 
 5. **Все JSON-поля явно сериализуйте/десериализуйте.**
-   Используйте `json.loads(raw or "[]")` / `json.loads(raw or "{}")`.
+   `json.loads(raw or "[]")` / `json.dumps(data, ensure_ascii=False)`.
 
 6. **Интерактивные режимы всегда оборачивайте в `try/finally`.**
-   Особенно если используете:
-
-   * альтернативный экран
-   * мышь
-   * PTY
+   Особенно: альтернативный экран, мышь, PTY.
 
 7. **Для проверки прав используйте `api.require_permission()`.**
-   Это чище и единообразнее.
 
 8. **Для простых команд возвращайте строку.**
    Для потокового вывода — `await api.write(...)`.
 
 9. **Изменения `api.env` не постоянны сами по себе.**
-   Если нужна персистентность — обновляйте `saved_env` в БД.
+   Для персистентности обновляйте `saved_env` в БД.
 
 10. **Логируйте административные действия.**
     Особенно всё, что меняет состояние системы или пользователей.
 
+11. **Всегда включайте `build_parser` в `command`.**
+    Это нужно для автодополнения и подсветки.
+
+12. **Используйте `api.run_interactive()` вместо ручного PTY.**
+    Если нужен полный контроль — используйте `api.pty`.
+
 ---
 
-# 24. Полные примеры команд
+# 28. Полные примеры команд
 
-## 24.1. Простая команда
+## 28.1. Простая команда
 
 ```python
 from sshserver.commandapi import CommandAPI
+
+def build_parser(parser):
+    parser.description = command["help"]
 
 async def execute(api: CommandAPI) -> str | None:
     return f"Hello, {api.username}!\n"
@@ -1751,70 +1813,87 @@ command = {
     "name": "hello",
     "help": "Say hello",
     "func": execute,
+    "build_parser": build_parser,
 }
 ```
 
 ---
 
-## 24.2. Команда с парсером
-
-```python
-from sshserver.commandapi import CommandAPI, CommandArgumentError
-
-async def execute(api: CommandAPI) -> str | None:
-    parser = api.parser("example")
-    parser.add_flag("-v", "--verbose", help="Verbose output")
-    parser.add_option("-n", "--name", default="world", help="Name to greet")
-    parser.add_positional("target", help="Target (optional)", required=False)
-
-    try:
-        ns = parser.parse(api.args)
-    except CommandArgumentError as e:
-        return f"Error: {e}\n"
-
-    if ns.verbose:
-        await api.writeln(f"Parsed: {ns}")
-
-    return f"Hello, {ns.name}!\n"
-
-command = {
-    "name": "greet",
-    "help": "Greet someone",
-    "func": execute,
-}
-```
-
----
-
-## 24.3. Команда с правами и БД
+## 28.2. Команда с `build_parser` и подкомандами
 
 ```python
 import json
-from sshserver.commandapi import CommandAPI, CommandArgumentError
+from sshserver.commandapi import CommandAPI, CommandPermissionError
 
-HELP = """Usage: userinfo [OPTIONS]
+def build_parser(parser):
+    parser.description = command["help"]
 
-Show information about current user.
+    subparsers = parser.add_subparsers(dest="subcommand", required=True)
 
-Options:
-  -a, --all     Show all fields
-  -h, --help    Show this help
-"""
+    p_list = subparsers.add_parser("list", help="List SSH keys")
+    p_list.add_argument("--user", help="Target username")
+
+    p_add = subparsers.add_parser("add", help="Add SSH key")
+    p_add.add_argument("key", help="SSH public key")
+
+async def execute(api: CommandAPI) -> str | None:
+    parser = api.parser("sshkey", description=command["help"])
+    parsed_args = parser.parse_args(api.args)
+
+    target_user = parsed_args.user or api.username
+
+    if target_user != api.username and not api.has_permission("db_admin"):
+        raise CommandPermissionError("db_admin required")
+
+    row = await api.fetch_one(
+        "SELECT ssh_keys FROM users WHERE username = ?",
+        (target_user,)
+    )
+    ssh_keys = json.loads(row[0] or "[]") if row else []
+
+    if parsed_args.subcommand == "list":
+        if not ssh_keys:
+            return f"No SSH keys for {target_user}.\n"
+        lines = [f"SSH keys for {target_user}:"]
+        for i, key in enumerate(ssh_keys):
+            short = key[:80] + "..." if len(key) > 80 else key
+            lines.append(f"{i}: {short}")
+        return "\n".join(lines) + "\n"
+
+    elif parsed_args.subcommand == "add":
+        ssh_keys.append(parsed_args.key)
+        await api.execute(
+            "UPDATE users SET ssh_keys = ? WHERE username = ?",
+            (json.dumps(ssh_keys, ensure_ascii=False), target_user)
+        )
+        await api.db.commit()
+        return f"SSH key added for {target_user}.\n"
+
+command = {
+    "name": "sshkey",
+    "help": "Manage SSH keys",
+    "func": execute,
+    "build_parser": build_parser,
+}
+```
+
+---
+
+## 28.3. Команда с правами и БД
+
+```python
+import json
+from sshserver.commandapi import CommandAPI
+
+def build_parser(parser):
+    parser.description = command["help"]
+    parser.add_argument("-a", "--all", action="store_true", help="Show all fields")
 
 async def execute(api: CommandAPI) -> str | None:
     api.require_permission("db_viewer")
 
-    parser = api.parser("userinfo")
-    parser.add_flag("-a", "--all", help="Show all fields")
-    parser.add_flag("-h", "--help", help="Show help")
-
-    try:
-        ns = parser.parse(api.args)
-    except CommandArgumentError as e:
-        return f"Error: {e}\n"
-
-    if ns.help:
-        return HELP
+    parser = api.parser("userinfo", description=command["help"])
+    parsed_args = parser.parse_args(api.args)
 
     row = await api.fetch_one(
         "SELECT username, group_id, created_at, ssh_keys, saved_env, history "
@@ -1823,15 +1902,14 @@ async def execute(api: CommandAPI) -> str | None:
     )
 
     if not row:
-        return f"User {api.username} not found in database.\n"
+        return f"User {api.username} not found.\n"
 
     db_username, group_id, created_at, ssh_keys_raw, saved_env_raw, history_raw = row
 
-    if ns.all:
+    if parsed_args.all:
         ssh_keys = json.loads(ssh_keys_raw or "[]")
         saved_env = json.loads(saved_env_raw or "{}")
         history = json.loads(history_raw or "[]")
-
         return (
             f"Username: {db_username}\n"
             f"Group ID: {group_id}\n"
@@ -1841,47 +1919,52 @@ async def execute(api: CommandAPI) -> str | None:
             f"History entries: {len(history)}\n"
         )
 
-    return (
-        f"Username: {db_username}\n"
-        f"Group ID: {group_id}\n"
-        f"Created at: {created_at}\n"
-    )
+    return f"Username: {db_username}\nGroup ID: {group_id}\nCreated at: {created_at}\n"
 
 command = {
     "name": "userinfo",
     "help": "Show information about current user",
     "func": execute,
-    "permissions": ["db_viewer"]
+    "permissions": ["db_viewer"],
+    "build_parser": build_parser,
 }
 ```
 
 ---
 
-## 24.4. Интерактивная команда подтверждения
+## 28.4. Интерактивная команда подтверждения
 
 ```python
 from sshserver.commandapi import CommandAPI, CommandAbort
 
-async def execute(api: CommandAPI) -> str | None:
-    if not await api.confirm("Delete temp data? [y/N]: "):
-        return "Cancelled by user.\n"
+def build_parser(parser):
+    parser.description = command["help"]
 
-    await api.write_success("Deleted.")
+async def execute(api: CommandAPI) -> str | None:
+    try:
+        await api.confirm("Delete temp data? [y/N]: ")
+        await api.write_success("Deleted.")
+    except CommandAbort:
+        return "Cancelled by user.\n"
     return None
 
 command = {
     "name": "confirmtest",
     "help": "Test confirmation flow",
     "func": execute,
+    "build_parser": build_parser,
 }
 ```
 
 ---
 
-## 24.5. Интерактивный shell
+## 28.5. Интерактивный shell через `run_interactive()`
 
 ```python
 from sshserver.commandapi import CommandAPI
+
+def build_parser(parser):
+    parser.description = command["help"]
 
 async def execute(api: CommandAPI) -> str | None:
     await api.run_interactive(
@@ -1894,7 +1977,77 @@ async def execute(api: CommandAPI) -> str | None:
 
 command = {
     "name": "bash",
-    "help": "Open interactive shell",
+    "help": "Open interactive shell (auto PTY)",
     "func": execute,
+    "permissions": ["system_permission", "admin_permission"],
+    "build_parser": build_parser,
+}
+```
+
+---
+
+## 28.6. Интерактивный shell через низкоуровневый PTY
+
+```python
+import asyncio
+import os
+import fcntl
+import termios
+from sshserver.commandapi import CommandAPI
+
+def _setup_pty(slave_fd: int):
+    """Make slave fd the controlling terminal in the child."""
+    os.setsid()
+    fcntl.ioctl(slave_fd, termios.TIOCSCTTY, 0)
+
+def build_parser(parser):
+    parser.description = command["help"]
+
+async def execute(api: CommandAPI) -> None:
+    env = api.env
+    terminal = api.terminal
+    pty = terminal.pty
+
+    await pty.ensure()
+    slave_fd = pty.get_slave_fd()
+
+    # Собираем окружение
+    process_env = os.environ.copy()
+    process_env.setdefault("TERM", env.get("TERM", "xterm-256color"))
+
+    # Получаем размеры окна
+    cols, rows, pixwidth, pixheight = (
+        api.cols, api.rows, api.pixwidth, api.pixheight
+    )
+
+    # Синхронизируем размер
+    await pty.resize(rows, cols, pixwidth, pixheight)
+    await api.write("\r\n")
+
+    # Подключаем потоки
+    await pty.attach_streams()
+
+    # Запускаем процесс
+    proc = await asyncio.create_subprocess_exec(
+        "bash",
+        stdin=slave_fd,
+        stdout=slave_fd,
+        stderr=slave_fd,
+        env=process_env,
+        pass_fds=(slave_fd,),
+        preexec_fn=lambda: _setup_pty(slave_fd),
+    )
+
+    pty.set_owner_pid(proc.pid)
+    await proc.wait()
+    await pty.detach_streams()
+    return None
+
+command = {
+    "name": "bash_manual",
+    "help": "Start bash with manual PTY setup",
+    "func": execute,
+    "permissions": ["system_permission"],
+    "build_parser": build_parser,
 }
 ```

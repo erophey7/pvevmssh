@@ -12,9 +12,9 @@ async def execute(api: CommandAPI) -> str | None:
     if parsed_args.state:
         echoing = parsed_args.state == "on"
     else:
-        echoing = not api.terminal.input.editor.echo
+        echoing = not api.terminal.input.editor.vpub.echo
 
-    api.terminal.input.editor.echo = echoing
+    api.terminal.input.editor.vpub.echo = echoing
     api.logger.debug(f"Now terminal echoing is {echoing}")
     return f"Terminal echo switched to {echoing}\n"
 

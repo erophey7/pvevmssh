@@ -37,6 +37,7 @@ tester_permission
 * `mouse`                   - дебаг мышки
 * `termecho`                - управление `Terminal echo`
 * `sessioninfo`             - runtime значения в SessionInfo dataclass
+* `termecho`                - управление echo терминала
 
 system_permission or admin_permission
 
@@ -277,20 +278,22 @@ STYLE_C=B
 
 Подсветка команд поддерживает следующие категории:
 
-| Стиль                 | Описание               |
-| --------------------- | ---------------------- |
-| STYLE_SYNTAX_COMMAND  | команды                |
-| STYLE_SYNTAX_OPTION   | флаги (`-h`, `--help`) |
-| STYLE_SYNTAX_STRING   | строки                 |
-| STYLE_SYNTAX_NUMBER   | числа                  |
-| STYLE_SYNTAX_PATH     | пути                   |
-| STYLE_SYNTAX_ENV      | `$VAR`                 |
-| STYLE_SYNTAX_FLAG     | параметры              |
-| STYLE_SYNTAX_KEY      | ключи `key=value`      |
-| STYLE_SYNTAX_OPERATOR | `=`, `>`, `<`          |
-| STYLE_SYNTAX_COMMENT  | комментарии            |
-| STYLE_SYNTAX_BOOL     | true / false           |
-| STYLE_SYNTAX_NULL     | null / none            |
+| Стиль                   | Описание               |
+| ----------------------- | ---------------------- |
+| STYLE_SYNTAX_COMMAND    | команды                |
+| STYLE_SYNTAX_SUBCOMMAND | субкомманды            |
+| STYLE_SYNTAX_OPTION     | флаги (`-h`, `--help`) |
+| STYLE_SYNTAX_STRING     | строки                 |
+| STYLE_SYNTAX_NUMBER     | числа                  |
+| STYLE_SYNTAX_PATH       | пути                   |
+| STYLE_SYNTAX_ENV        | `$VAR`                 |
+| STYLE_SYNTAX_FLAG       | параметры              |
+| STYLE_SYNTAX_KEY        | ключи `key=value`      |
+| STYLE_SYNTAX_VALUE      | значение после `=`     |
+| STYLE_SYNTAX_OPERATOR   | `=`, `>`, `<`          |
+| STYLE_SYNTAX_COMMENT    | комментарии            |
+| STYLE_SYNTAX_BOOL       | true / false           |
+| STYLE_SYNTAX_NULL       | null / none            |
 
 
 ---

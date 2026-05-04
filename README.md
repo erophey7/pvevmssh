@@ -30,7 +30,6 @@
 - [ ] **Команды для работы с ВМ**: `list`, `start`, `stop`, `migrate`, `status`
 - [ ] **Подключение к serial-порту** ВМ через команду `terminal <vmid>`
 - [ ] **Протокол между сервером и агентами** (сырой TCP, возможно protobuf/msgpack)
-- [ ] **Интеграция GNU Readline** (возможность использовать GNU Readline вместо встроенного line editor)
 - [ ] **Pipe line** 
 
 ---
@@ -47,13 +46,13 @@
 ## 🧪 Статус
 
 Проект находится на ранней стадии разработки. Инструкции по установке появятся после стабилизации API и реализации минимальной аутентификации.  
-Документация по API команд доступна в [command_api.md](Docs/command_api.md) и [new_command_api.md](Docs/new_command_api.md).
+Документация по API команд доступна [new_command_api.md](Docs/new_command_api.md).
 
 ---
 
 ## 📚 Ссылки
 
 - [User гайд](Docs/User_guide.md)
-- [Документация API команд (почти актуально)](Docs/new_command_api.md)
-- [Документация API команд](Docs/command_api.md)
+- [Admin гайд](Docs/Admin_guide.md)
+- [Документация API команд](Docs/new_command_api.md)
 - [Репозиторий на GitHub](https://github.com/erophey7/pvevmssh)

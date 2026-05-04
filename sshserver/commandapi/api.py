@@ -399,16 +399,16 @@ class CommandAPI:
             await self.write(prompt)
 
         # Сохраняем текущее состояние эхо
-        echo_was_enabled = self.terminal.input.editor.echo
+        echo_was_enabled = self.terminal.input.editor.vpub.echo
 
-        self.terminal.input.editor.echo = False
+        self.terminal.input.editor.vpub.echo = False
         try:
             # Читаем строку (эхо отключено)
             result = await self.terminal.input.read_str()
         finally:
             # Восстанавливаем эхо
             if echo_was_enabled:
-                self.terminal.input.editor.echo = True
+                self.terminal.input.editor.vpub.echo = True
 
         # Добавляем перевод строки после ввода для красоты
         await self.write("\n")
