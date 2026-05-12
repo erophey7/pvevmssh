@@ -29,7 +29,7 @@ async def handle_client(process):
         terminal = Terminal(process)
 
         lsp_engine = LSPEngine()
-        lsp_engine.add_client("shell", ShellLSP(session.dispatcher))
+        lsp_engine.add_client("shell", ShellLSP(session.dispatcher, session.extra["env"]))
         lsp_engine.setup_default("shell")
         connector = InCodeLSPConnector(lsp_engine)
         terminal.input.editor.set_lsp_engine(connector)

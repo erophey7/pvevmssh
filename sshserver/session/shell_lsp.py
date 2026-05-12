@@ -25,10 +25,12 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from sshserver.dispatcher import CommandDispatcher
     from sshserver.lsp_engine import LSPEngine
+    from .environment import UserEnvironment
 
 class ShellLSP:
-    def __init__(self, dispatcher: CommandDispatcher):
+    def __init__(self, dispatcher: CommandDispatcher, env: UserEnvironment):
         self.dispatcher = dispatcher
+        self.env = env      #вот тебе объёкт env
 
     async def __call__(self, ctx):
         parser = self.dispatcher.get_command_parser(ctx.command)
@@ -51,6 +53,10 @@ class ShellLSP:
     # ==========================================
     async def complete(self, partial: str, previous_tokens: list[str]):
         try:
+            # --- ENV COMPLETION ---
+            if partial.startswith('$'):
+                return self._complete_with_env(previous_tokens, partial)
+
             if not previous_tokens:
                 return []
             cmd_name = previous_tokens[0]
@@ -122,6 +128,24 @@ class ShellLSP:
                         results.append(c_str)
 
         return sorted(set(results))
+    
+    # ==========================================
+    # ENV coplete
+    # ==========================================
+    def _complete_with_env(self, arg_tokens: list[str], partial: str):
+        """
+        Предлагает автодополнение для $VAR по текущему runtime-env.
+        partial приходит вида '$' или '$PRE' — отрезаем '$' и ищем по ключам.
+        """
+        prefix = partial[1:] if partial.startswith('$') else partial
+        env_vars = self.env.all()
+
+        results = [
+            f"${key}"
+            for key in env_vars
+            if key.startswith(prefix)
+        ]
+        return sorted(results)
 
     # ==========================================
     # SEMANTIC TOKENS (SPAN-BASED)
